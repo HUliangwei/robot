@@ -134,6 +134,8 @@ class MujocoPushtEnv(gym.Env):
             "coverage": float(coverage),
             "block_pose": self.data.qpos[3:6].copy(),
             "goal_pose": GOAL_POSE.copy(),
+            "pos_agent": self.data.qpos[0:2].copy(),
+            "vel_agent": self.data.qvel[0:2].copy(),
         }
         return observation, reward, terminated, False, info
 
