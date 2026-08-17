@@ -138,6 +138,8 @@ def scan_datasets():
     lroot = os.path.join(ROBOT, "datasets", "lerobot")
     if os.path.isdir(lroot):
         for name in sorted(os.listdir(lroot)):
+            if name.startswith(".") or name == "hub":
+                continue
             base = os.path.join(lroot, name)
             if not os.path.isdir(base) or name in seen or name.startswith("."):
                 continue

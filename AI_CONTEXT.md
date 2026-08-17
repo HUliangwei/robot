@@ -65,6 +65,7 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 **结构整理**：删除空目录（notes/datasets/examples/models/.vscode）、陈旧 rollout（rollout_mujoco/rollout_official*/lemon/smoke）、顶层 outputs/my_rollout；保留证据视频与权重。
 **GUI 升级**：新增「全部文件」浏览（项目内所有文件可查看：md/ipynb/代码/媒体）+ 全局 README/笔记/文档导航；修复 AI_CONTEXT 导航链接（原路径 404）；**项目页顶部展示 README 项目介绍**；**命令输出实时流式**（PYTHONUNBUFFERED=1，修复块缓冲导致 GUI 读不到输出的问题）。
 **README 结构化**：两个小项目 README 统一为 7 段式（数据集/模型架构/权重路径/训练入口/推理/仿真与推理示例/分析），GUI 项目页直接渲染，便于学习与个人网站展示。
+**GUI v2 工作台（2026-08-17）**：新增「工作台」五大视图——📊数据集（扫描 HF 缓存+本地格式，可导入）、🧠模型与架构（列出全部权重+ACT/SmolVLA 架构图+config 详情）、🎓训练（表单生成 lerobot_train 命令）、🚀推理·仿真（环境/权重/局数表单，完成后自动展示视频）、📈分析（metrics 总览）；＋新建小项目（生成 README/PROGRESS/commands 骨架）；所有操作在控制台实时回显执行的命令（PYTHONUNBUFFERED）。后端新增 /api/datasets /api/models /api/models_config /api/analysis /api/train /api/infer /api/create_project /api/datasets/import。后续规划：仿真环境 RL（强化学习）模块。
 
 **关键结果**：**官方环境成功已复现**——社区 aadarshram ACT @seed1000 ep0 覆盖率 0.9534（>0.95，134 步完成，成功率 1/5）；MuJoCo 环境最高 0.865。自训 25k 与社区权重水平相当；均未达高成功率（欠训练，与管线无关）。
 
