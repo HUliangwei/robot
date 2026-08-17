@@ -12,16 +12,34 @@
       "desc": "验证 lerobot.envs.libero 可导入、可实例化任务并随机 step"
     },
     {
-      "name": "查看 LIBERO 数据集信息",
-      "cmd": "python -m lerobot.scripts.lerobot_info --dataset.repo_id=lerobot/libero_spatial",
-      "cwd": ".",
-      "desc": "打印 LIBERO-Spatial 数据集结构与统计（首次会自动下载）"
+      "name": "Windows 补丁（重装/换机器后执行）",
+      "cmd": "python setup_windows_patches.py",
+      "cwd": "workspace/libero",
+      "desc": "幂等：egl_probe stub + --no-deps 安装 + robosuite Windows 补丁"
     },
     {
-      "name": "训练 ACT（LIBERO-Spatial，示例）",
-      "cmd": "python -m lerobot.scripts.lerobot_train --env.type=libero --env.task=... --dataset.repo_id=lerobot/libero_spatial --policy.type=act --output_dir=outputs/train/libero_act --steps=50000 --batch_size=64 --save_freq=5000 --wandb.enable=false",
+      "name": "查看数据集信息",
+      "cmd": "python -m lerobot.scripts.lerobot_info --dataset.repo_id=lerobot/libero",
       "cwd": "workspace/libero",
-      "desc": "LIBERO 官方训练命令模板（task 名与超参待环境验证后确认）"
+      "desc": "打印 lerobot/libero 数据集统计（1693 episodes / 273465 帧）"
+    },
+    {
+      "name": "ACT 训练冒烟（50 步验证管线）",
+      "cmd": "python -m lerobot.scripts.lerobot_train --env.type=libero --env.task=libero_spatial --env.task_ids=[0] --dataset.repo_id=lerobot/libero --dataset.root=D:\\Desktop\\robot\\datasets --policy.type=act --policy.push_to_hub=false --output_dir=outputs/train/libero_act_smoke --steps=50 --batch_size=2 --save_freq=1000 --eval_steps=0 --env_eval_freq=0 --wandb.enable=false",
+      "cwd": "workspace/libero",
+      "desc": "已验证通过（~4.6 step/s）"
+    },
+    {
+      "name": "ACT 正式训练（LIBERO-Spatial）",
+      "cmd": "python -m lerobot.scripts.lerobot_train --env.type=libero --env.task=libero_spatial --env.task_ids=[0] --dataset.repo_id=lerobot/libero --dataset.root=D:\\Desktop\\robot\\datasets --policy.type=act --policy.push_to_hub=false --output_dir=outputs/train/libero_act --steps=25000 --batch_size=8 --save_freq=5000 --eval_steps=0 --env_eval_freq=0 --wandb.enable=false",
+      "cwd": "workspace/libero",
+      "desc": "预算 25k 步（8GB 显卡约 3-6h，可调 --steps）；成功后用 eval 命令看成功率"
+    },
+    {
+      "name": "评估 checkpoint",
+      "cmd": "python -m lerobot.scripts.lerobot_eval --env.type=libero --env.task=libero_spatial --env.task_ids=[0] --env.max_parallel_tasks=1 --eval.use_async_envs=false --policy.path=outputs/train/libero_act/checkpoints/last/pretrained_model --eval.n_episodes=10",
+      "cwd": "workspace/libero",
+      "desc": "10 局评估 LIBERO-Spatial task0 成功率（Windows 必须加 max_parallel_tasks=1 + use_async_envs=false）"
     },
     {
       "name": "查看 lerobot LIBERO 文档",
