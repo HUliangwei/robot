@@ -81,6 +81,7 @@ td.small { font-size: .75rem; color: var(--muted); }
 .badge { padding: .15rem .5rem; border-radius: 10px; font-size: .72rem; color: #fff; }
 .badge-act { background: #1f77b4; }
 .badge-vla { background: #d62728; }
+.badge-vlm { background: #8c564b; }
 .badge-other { background: #7f7f7f; }
 .metric { display: inline-block; background: #eef3f8; border-radius: 6px; padding: .15rem .5rem; margin: .15rem .3rem .15rem 0; font-size: .78rem; font-family: Consolas, monospace; }
 .form-row { display: flex; align-items: center; gap: .8rem; margin-bottom: .7rem; flex-wrap: wrap; }
@@ -94,3 +95,18 @@ td.small { font-size: .75rem; color: var(--muted); }
 .arch-sub { font-size: .72rem; color: var(--muted); }
 .arch-arrow { font-size: 1.2rem; color: var(--muted); }
 .arch-note { font-size: .8rem; color: var(--muted); border-left: 3px solid var(--acc); padding-left: .8rem; }
+
+/* ---- UI 布局优化 ---- */
+.card { overflow-x: auto; }
+.card > table { min-width: 640px; }
+#console-overlay { width: 760px; height: 460px; }
+.console-head { gap: .5rem; }
+#console-head-cmd { flex: 1; font-size: .75rem; color: #9cdcfe; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#console-body { font-size: .8rem; line-height: 1.5; }
+.gallery video, .gallery img { max-height: 300px; object-fit: contain; background: #111; }
+#nav-new-project { color: var(--acc); font-size: .82rem; }
+main h2 { margin-top: .4rem; }
+.model-card .model-path { user-select: all; }
+.toolbar button + button { margin-left: .4rem; }
+.form-row input { font-size: .82rem; }
+#welcome { max-width: 760px; line-height: 1.8; }

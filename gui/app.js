@@ -61,14 +61,23 @@ const CODE_EXT = ["py", "xml", "json", "yml", "yaml", "txt", "csv", "sh", "toml"
 // ---------------- console / command runner ----------------
 function showConsole(title) {
   $("#console-title").textContent = "运行: " + title;
+  const cmdEl = $("#console-head-cmd");
+  if (cmdEl) cmdEl.textContent = "";
   $("#console-body").textContent = "";
   $("#console-overlay").classList.remove("hidden");
 }
 async function pollRun() {
   if (!currentRunId) return;
   const r = await fetch("/api/run/" + currentRunId);
+  if (!r.ok) { // 运行记录已失效（如服务器重启）
+    clearInterval(pollTimer);
+    pollTimer = null;
+    $("#console-body").textContent += "\n\n[运行记录已失效（服务器可能已重启）]";
+    $("#console-kill").disabled = true;
+    return;
+  }
   const j = await r.json();
-  $("#console-body").textContent = j.output;
+  $("#console-body").textContent = j.output || "";
   $("#console-body").scrollTop = $("#console-body").scrollHeight;
   if (!j.running) {
     clearInterval(pollTimer);
@@ -81,7 +90,10 @@ async function pollRun() {
 async function runCmd(title, project, cmd, cwd, onDone) {
   showConsole(title);
   $("#console-body").textContent = "$ " + cmd + "\n\n" + (cwd ? `# cwd: ${cwd}\n\n` : "");
+  const cmdEl = $("#console-head-cmd");
+  if (cmdEl) cmdEl.textContent = "$ " + cmd;
   onRunDone = onDone || (() => {});
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   const r = await fetch("/api/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -382,7 +394,6 @@ async function trainView() {
 async function inferView(prefillPath) {
   const models = await (await fetch("/api/models")).json();
   const mOpts = models.map((m) => `<option value="${esc(m.path)}">${esc(m.name)}（${esc(m.type)}）</option>`).join("");
-  const projects = await (await fetch("/api/projects")).json();
   const envOpts = ['<option value="libero">LIBERO（Franka · MuJoCo）</option>',
     '<option value="mujoco">PushT-MuJoCo（自建）</option>',
     '<option value="official">PushT-官方（pymunk 2D）</option>'].join("");
@@ -393,7 +404,7 @@ async function inferView(prefillPath) {
       <div class="form-row"><label>或手填权重路径</label><input id="inf-path" value="${esc(prefillPath || "")}" placeholder="datasets/hub/models--…/snapshots/… 或 outputs/train/…/pretrained_model" style="font-family:Consolas"></div>
       <div class="form-row"><label>局数</label><input id="inf-ep" type="number" value="3" min="1"></div>
       <div class="form-row"><label>LIBERO 任务（仅 libero）</label><input id="inf-task" value="libero_spatial" style="font-family:Consolas"><input id="inf-taskids" value="[0]" style="width:90px;font-family:Consolas"></div>
-      <div class="form-row"><label>输出目录</label><input id="inf-outdir" value="outputs/rollout_gui" style="font-family:Consolas"></div>
+      <div class="form-row"><label>输出目录（PushT 用）</label><input id="inf-outdir" value="outputs/rollout_gui" style="font-family:Consolas"></div>
       <div class="form-row"><button type="submit">🚀 开始推理</button><span class="hint" style="margin-left:.8rem">控制台显示命令与实时输出；完成后自动列出产出的视频</span></div>
     </form></div>
     <div class="card"><h3>🎬 推理结果</h3><div class="gallery" id="inf-gallery"><p class="hint">（推理完成后显示视频）</p></div></div>`;
@@ -411,18 +422,29 @@ async function inferView(prefillPath) {
     });
     const j = await res.json();
     if (j.error) { alert("失败: " + j.error); return; }
-    runCmd("推理 " + body.env + " @" + body.policy_path, j.project, j.cmd, j.cwd, () => showVideos(j.project, body.outdir));
+    runCmd("推理 " + body.env + " @" + body.policy_path, j.project, j.cmd, j.cwd,
+      () => showVideos(j.project, j.out_root || "outputs"));
   };
 }
 
-function showVideos(project, outdir) {
+function showVideos(project, outRoot) {
   const gal = $("#inf-gallery");
   if (!gal) return;
-  const base = outdir.replace(/^\.\.\/|^\.\//, "");
+  const base = String(outRoot || "outputs").replace(/^\.\.\/|^\.\//, "");
   fetch(`/api/project_files/${encodeURIComponent(project)}`).then((r) => r.json()).then((files) => {
-    const vids = files.filter((f) => f.path.startsWith(base + "/") && /\.(mp4|gif)$/.test(f.path));
-    gal.innerHTML = vids.length ? "" : '<p class="hint">（输出目录暂无视频，检查控制台输出）</p>';
-    for (const v of vids) {
+    let cands = files.filter((f) => f.path.startsWith(base + "/") && /\.(mp4|gif)$/.test(f.path));
+    // lerobot_eval 会写 outputs/eval/<时间戳>_<模型>/，只展示最新的那次运行
+    if (base === "outputs/eval" && cands.length) {
+      const groups = {};
+      for (const c of cands) {
+        const seg = c.path.split("/")[2]; // outputs/eval/<seg>/...
+        (groups[seg] = groups[seg] || []).push(c);
+      }
+      const newest = Object.keys(groups).sort().pop();
+      cands = groups[newest] || [];
+    }
+    gal.innerHTML = cands.length ? "" : '<p class="hint">（输出目录暂无视频，检查控制台输出）</p>';
+    for (const v of cands) {
       const fig = document.createElement("figure");
       const cap = document.createElement("figcaption");
       cap.textContent = v.path.split("/").pop();

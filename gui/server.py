@@ -171,6 +171,8 @@ def scan_models():
         except Exception:
             continue
         ptype = cfg.get("type") or cfg.get("policy_type") or "?"
+        if ptype == "?" and str(cfg.get("model_type", "")).lower().startswith("smolvlm"):
+            ptype = "vlm"  # 基础视觉-语言模型（SmolVLA 的骨干）
         entry = {
             "name": repo_id, "source": "hf-cache", "type": ptype, "path": snap,
             "chunk_size": cfg.get("chunk_size"), "n_obs_steps": cfg.get("n_obs_steps"),
@@ -247,6 +249,9 @@ def build_train_cmd(b):
     steps = int(b.get("steps") or 5000)
     batch = int(b.get("batch_size") or 8)
     outdir = (b.get("output_dir") or "").strip() or "outputs/train/act_gui"
+    outdir = outdir.replace("\\", "/").strip("/")
+    if outdir.startswith(".."):
+        raise ValueError("输出目录必须是项目内相对路径（不允许 ..）")
     env_task = (b.get("env_task") or "").strip()
     project = "libero" if "libero" in dataset else "embodied_learning"
     if project == "libero":
@@ -263,16 +268,25 @@ def build_train_cmd(b):
 
 
 def build_infer_cmd(b):
-    """Generate an inference/eval command. Returns (cmd, project, cwd)."""
+    """Generate an inference/eval command. Returns (cmd, project, cwd, out_root).
+
+    out_root: 产出视频所在相对根目录（相对项目 cwd），供前端完成后展示。
+    - pusht: 用户指定 outdir（限制为项目内相对路径）
+    - libero: lerobot_eval 固定写到 <cwd>/outputs/eval/<时间戳>_<模型>/
+    """
     env_kind = (b.get("env") or "libero").strip()
     policy = (b.get("policy_path") or "").strip()
     episodes = int(b.get("episodes") or 3)
     outdir = (b.get("outdir") or "").strip() or "outputs/rollout_gui"
+    outdir = outdir.replace("\\", "/").strip("/")
+    if outdir.startswith(".."):
+        raise ValueError("输出目录必须是项目内相对路径（不允许 ..）")
     if env_kind in ("official", "mujoco"):
         project = "embodied_learning"
         cwd = "workspace/embodied_learning/mujoco_basics/pusht"
         cmd = (f"python run_pusht_rollout.py --env {env_kind} --n_episodes {episodes} "
                f"--policy-path {policy} --outdir ../../{outdir}")
+        out_root = outdir
     else:  # libero
         project = "libero"
         cwd = "workspace/libero"
@@ -281,7 +295,8 @@ def build_infer_cmd(b):
         cmd = (f"python -m lerobot.scripts.lerobot_eval --env.type=libero --env.task={task} "
                f"--env.task_ids={task_id} --env.max_parallel_tasks=1 --eval.use_async_envs=false "
                f"--eval.batch_size=1 --policy.path={policy} --eval.n_episodes={episodes}")
-    return cmd, project, cwd
+        out_root = "outputs/eval"  # lerobot_eval 固定输出（含时间戳子目录）
+    return cmd, project, cwd, out_root
 
 
 def find_projects():
@@ -550,9 +565,9 @@ class Handler(BaseHTTPRequestHandler):
             ln = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(ln) or b"{}")
             try:
-                cmd, proj, cwd = build_infer_cmd(body)
+                cmd, proj, cwd, out_root = build_infer_cmd(body)
                 run_id = start_run(proj, cmd, cwd)
-                return self._send(200, json.dumps({"run_id": run_id, "cmd": cmd, "cwd": cwd}))
+                return self._send(200, json.dumps({"run_id": run_id, "cmd": cmd, "cwd": cwd, "out_root": out_root}))
             except Exception as e:
                 return self._send(400, json.dumps({"error": str(e)}))
         if u.path.startswith("/api/run/"):
