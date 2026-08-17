@@ -1,0 +1,27 @@
+# ============ 重型/不可推送内容 ============
+# conda 环境（6.4GB）、数据集缓存（411MB）、MuJoCo 二进制（44MB）
+envs/
+datasets/
+tool/
+archives/
+
+# ============ 模型权重（GitHub 限制单文件 100MB） ============
+**/*.safetensors
+**/training_state/
+**/optimizer_state*
+**/rng_state*
+**/checkpoints/
+
+# ============ 中间训练产物 ============
+**/outputs/train/
+
+# ============ Python / 编辑器缓存 ============
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+
+# ============ 杂项 ============
+*.log
+.DS_Store
+Thumbs.db
