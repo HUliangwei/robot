@@ -63,7 +63,8 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 - 学习 Notebook：`notebooks/01_LIBERO_环境与数据学习.ipynb`（8 节）；推理脚本：`inference_libero.py`
 
 **结构整理**：删除空目录（notes/datasets/examples/models/.vscode）、陈旧 rollout（rollout_mujoco/rollout_official*/lemon/smoke）、顶层 outputs/my_rollout；保留证据视频与权重。
-**GUI 升级**：新增「全部文件」浏览（项目内所有文件可查看：md/ipynb/代码/媒体）+ 全局 README/笔记/文档导航；修复 AI_CONTEXT 导航链接（原路径 404）。
+**GUI 升级**：新增「全部文件」浏览（项目内所有文件可查看：md/ipynb/代码/媒体）+ 全局 README/笔记/文档导航；修复 AI_CONTEXT 导航链接（原路径 404）；**项目页顶部展示 README 项目介绍**；**命令输出实时流式**（PYTHONUNBUFFERED=1，修复块缓冲导致 GUI 读不到输出的问题）。
+**README 结构化**：两个小项目 README 统一为 7 段式（数据集/模型架构/权重路径/训练入口/推理/仿真与推理示例/分析），GUI 项目页直接渲染，便于学习与个人网站展示。
 
 **关键结果**：**官方环境成功已复现**——社区 aadarshram ACT @seed1000 ep0 覆盖率 0.9534（>0.95，134 步完成，成功率 1/5）；MuJoCo 环境最高 0.865。自训 25k 与社区权重水平相当；均未达高成功率（欠训练，与管线无关）。
 
@@ -110,3 +111,5 @@ python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
 - 2026-08-17：创建；PushT 主线完成、GitHub 推送、gui/docs/AI_CONTEXT 建立
 - 2026-08-17：§4 追加「推动后立刻停下」物理修复（块关节阻尼 5 + 摩擦对齐 pymunk），详见 note 04 §3.6
 - 2026-08-17：LIBERO 立项（骨架 + egl_probe stub 安装方案）；文件结构整理（删空目录/陈旧 rollout）；GUI 升级（文件浏览 + 全局导航）；残余旋转诊断记录（排除 5 类假设）
+- 2026-08-17：LIBERO 全链路打通（数据/训练/评估冒烟）；SmolVLA 官方模型评估 80% 成功（hf-mirror 下载基础模型 + 注入缓存）
+- 2026-08-17：GUI 命令输出实时流式修复（PYTHONUNBUFFERED）；项目页展示 README；两个小项目 README 结构化（数据/模型/权重/训练/推理/仿真/分析）
