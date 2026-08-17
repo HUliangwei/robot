@@ -14,11 +14,17 @@
 ## 目标 / 学习路线
 
 ```
-1. 环境跑通：LIBERO + 官方数据集下载 + 随机/脚本策略验证
-2. 模仿学习：LIBERO-Spatial + ACT（沿用 PushT 技能，动作=关节位置）
-3. VLA：LIBERO + SmolVLA（第一个真正的 VLA：视觉+语言指令→动作）
+1. 环境跑通：LIBERO + 官方数据集下载 + 随机/脚本策略验证   ✅
+2. 模仿学习：LIBERO + ACT（社区权重推理，流程跑通）        ✅
+3. VLA：LIBERO + SmolVLA（官方模型）                       ✅ 80% 成功率！
 4. 进阶：OpenVLA（需 >16GB 显存，云 GPU 或量化）
 ```
+
+## 关键成果（2026-08-17）
+
+- **完整闭环在 Windows 跑通**：环境（Franka+MuJoCo）→ 数据集（1.9GB/1693 episodes）→ 训练（ACT 冒烟 4.6 step/s）→ 评估（lerobot-eval，出视频+指标）
+- **官方 SmolVLA 在 LIBERO-Spatial task0 成功率 80%（4/5）**——VLA 学习核心验证；视频见 `outputs/eval_smolvla_spatial_t0/`
+- 社区 ACT 权重（test 仓库）0/10、0/1（权重弱，流程本身正确）
 
 ## 目录
 
