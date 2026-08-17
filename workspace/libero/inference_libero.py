@@ -153,9 +153,14 @@ def main():
             batch = pre(batch)
             with torch.inference_mode():
                 action_norm = policy.select_action(batch)
-            action = post({"action": action_norm})["action"]
-            action = action.squeeze(0).detach().cpu().numpy().astype(np.float32)
-            obs, rew, term, trunc, info = env.step(action)
+            chunk = post({"action": action_norm})["action"]
+            # 形状鲁棒处理：无论 (1,7) / (7,) / (1,1,7) / (1,100,7) 都取单步动作 (7,)
+            act = chunk.detach().cpu().numpy().astype(np.float32)
+            while act.ndim > 1:
+                act = act[0]
+            if act.ndim == 0 or act.shape[0] != 7:
+                act = np.zeros(7, dtype=np.float32)
+            obs, rew, term, trunc, info = env.step(act[None])  # SyncVectorEnv 需要 (batch, action_dim)
             done = bool(term.all() if hasattr(term, "all") else term)
             if done:
                 success = bool(info["success"].all() if hasattr(info.get("success"), "all") else info.get("success", False))
