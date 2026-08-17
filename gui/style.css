@@ -1,0 +1,51 @@
+:root {
+  --bg: #f6f8fa; --card: #fff; --line: #e1e4e8; --acc: #1f77b4; --text: #24292f;
+  --muted: #57606a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Microsoft YaHei", system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; min-height: 100vh; }
+header { position: fixed; top: 0; left: 0; right: 0; background: var(--acc); color: #fff; padding: .8rem 1.4rem; z-index: 10; }
+header h1 { margin: 0; font-size: 1.2rem; }
+header .sub { font-size: .8rem; opacity: .85; }
+aside { width: 260px; background: var(--card); border-right: 1px solid var(--line); padding: 5.2rem 1rem 1rem; position: fixed; top: 0; bottom: 0; overflow: auto; }
+aside h3 { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+aside ul { list-style: none; padding: 0; margin: 0; }
+aside li a, aside li { display: block; padding: .5rem .6rem; border-radius: 6px; color: var(--text); text-decoration: none; cursor: pointer; }
+aside li a:hover { background: #eef3f8; }
+aside li.active a, aside li.active { background: #dbe9f5; color: var(--acc); font-weight: 600; }
+aside .snippet { font-size: .75rem; color: var(--muted); padding: .1rem .6rem .5rem; }
+main { margin-left: 260px; padding: 5.2rem 1.6rem 2rem; flex: 1; max-width: 1100px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 1.2rem 1.4rem; margin-bottom: 1.2rem; }
+h2 { color: var(--acc); border-bottom: 2px solid var(--acc); padding-bottom: .3rem; }
+button { background: var(--acc); color: #fff; border: 0; border-radius: 6px; padding: .45rem .9rem; cursor: pointer; font-size: .85rem; }
+button.secondary { background: #eaeef2; color: var(--text); }
+button:disabled { opacity: .5; cursor: default; }
+code, pre { font-family: Consolas, monospace; }
+.command { border: 1px solid var(--line); border-radius: 8px; margin-bottom: .8rem; overflow: hidden; }
+.command .head { display: flex; justify-content: space-between; align-items: center; padding: .7rem 1rem; background: #fafbfc; }
+.command .name { font-weight: 600; }
+.command .desc { color: var(--muted); font-size: .85rem; padding: 0 1rem .6rem; }
+.command .cmdline { background: #f0f3f6; padding: .6rem 1rem; font-size: .8rem; white-space: pre-wrap; word-break: break-all; }
+.command .runbar { padding: .6rem 1rem; display: flex; gap: .6rem; align-items: center; }
+.status { font-size: .8rem; color: var(--muted); }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+.gallery figure { margin: 0; }
+.gallery video, .gallery img { width: 100%; border: 1px solid var(--line); border-radius: 6px; background: #000; }
+.gallery figcaption { font-size: .78rem; color: var(--muted); word-break: break-all; }
+table { border-collapse: collapse; width: 100%; margin: .6rem 0; }
+th, td { border: 1px solid var(--line); padding: .4rem .6rem; text-align: left; font-size: .9rem; }
+th { background: #f5f8fb; }
+#progress-view { line-height: 1.7; }
+#progress-view h1 { border-bottom: 2px solid var(--acc); padding-bottom: .3rem; }
+#progress-view h2 { border-bottom: 1px solid var(--line); }
+#progress-view code { background: #f0f3f6; padding: .1rem .35rem; border-radius: 4px; }
+#progress-view pre { background: #f6f8fa; border: 1px solid var(--line); padding: .8rem; overflow: auto; }
+#progress-view table { margin: .8rem 0; }
+#progress-view blockquote { border-left: 4px solid var(--acc); margin: 0; padding: .2rem 1rem; color: var(--muted); }
+.hint { color: var(--muted); font-size: .85rem; }
+#console-overlay { position: fixed; right: 1.2rem; bottom: 1.2rem; width: 640px; max-width: 92vw; height: 380px; background: #1e1e1e; border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.4); display: flex; flex-direction: column; z-index: 50; }
+#console-overlay.hidden { display: none; }
+.console-head { display: flex; align-items: center; gap: .6rem; padding: .5rem .8rem; color: #fff; background: #333; border-radius: 10px 10px 0 0; }
+.console-head span { flex: 1; font-size: .85rem; }
+.console-head button { padding: .25rem .6rem; font-size: .75rem; background: #555; }
+#console-body { flex: 1; margin: 0; padding: .6rem .8rem; overflow: auto; color: #d4d4d4; font-size: .78rem; white-space: pre-wrap; word-break: break-all; }

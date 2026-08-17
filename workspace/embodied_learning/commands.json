@@ -1,0 +1,46 @@
+{
+  "project": "embodied_learning",
+  "description": "PushT × LeRobot × MuJoCo：数据→训练→双环境推理",
+  "env": "lerobot-win",
+  "python": "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+  "hf_home": "D:\\Desktop\\robot\\datasets",
+  "pusht_dir": "workspace/embodied_learning/mujoco_basics/pusht",
+  "commands": [
+    {
+      "name": "环境自检（MuJoCo 推 50 步）",
+      "cmd": "python mujoco_pusht_env.py",
+      "cwd": "workspace/embodied_learning/mujoco_basics/pusht",
+      "desc": "验证 MuJoCo 环境能创建、随机动作 50 步不报错"
+    },
+    {
+      "name": "官方 2D 环境推理（社区权重）",
+      "cmd": "python run_pusht_rollout.py --env official --n_episodes 3 --policy-path aadarshram/act_pusht --outdir ../../outputs/rollout_official",
+      "cwd": "workspace/embodied_learning/mujoco_basics/pusht",
+      "desc": "pymunk 2D 环境 + 社区 ACT，产出视频与 metrics.json"
+    },
+    {
+      "name": "MuJoCo 环境推理（自训权重）",
+      "cmd": "python run_pusht_rollout.py --env mujoco --n_episodes 3 --policy-path ../../outputs/train/act_pusht_real/checkpoints/025000/pretrained_model --outdir ../../outputs/rollout_mujoco",
+      "cwd": "workspace/embodied_learning/mujoco_basics/pusht",
+      "desc": "自建 MuJoCo 环境 + 自训 ACT checkpoint"
+    },
+    {
+      "name": "训练 ACT（PushT，30k 步）",
+      "cmd": "python -m lerobot.scripts.lerobot_train --dataset.repo_id=lerobot/pusht --policy.type=act --policy.push_to_hub=false --output_dir=../../outputs/train/act_pusht_real --steps=30000 --batch_size=64 --save_freq=5000 --save_checkpoint=true --env_eval_freq=0 --eval_steps=0 --wandb.enable=false",
+      "cwd": "workspace/embodied_learning",
+      "desc": "约 4-8h（受 GPU 负载影响）；成功需要官方配方 batch8+60-80k 步"
+    },
+    {
+      "name": "查看数据集信息",
+      "cmd": "python -m lerobot.scripts.lerobot_info --dataset.repo_id=lerobot/pusht",
+      "cwd": ".",
+      "desc": "打印数据集结构与统计"
+    },
+    {
+      "name": "可视化数据集",
+      "cmd": "python -m lerobot.scripts.lerobot_dataset_viz --dataset.repo_id=lerobot/pusht",
+      "cwd": ".",
+      "desc": "逐个 episode 展示图像/动作/状态"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>robot · 项目仪表盘</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🤖 robot 项目仪表盘</h1>
+  <div class="sub">LeRobot × MuJoCo 学习工作区 · 本地可视化 / 命令运行 / 进度跟踪</div>
+</header>
+
+<aside id="sidebar">
+  <h3>小项目</h3>
+  <ul id="project-list"></ul>
+  <h3>全局</h3>
+  <ul class="nav">
+    <li><a href="#" id="nav-report">📊 推理报告</a></li>
+    <li><a href="#" id="nav-ai">🤖 AI_CONTEXT.md</a></li>
+  </ul>
+</aside>
+
+<main id="main">
+  <section id="welcome">
+    <h2>欢迎 👋</h2>
+    <p>左侧选择小项目查看进度、运行命令、浏览产出视频与图表。</p>
+    <p class="hint">命令在本地执行（使用项目 conda 环境 python），输出实时流式显示。</p>
+  </section>
+</main>
+
+<div id="console-overlay" class="hidden">
+  <div class="console-head">
+    <span id="console-title">命令输出</span>
+    <button id="console-kill">停止</button>
+    <button id="console-close">关闭</button>
+  </div>
+  <pre id="console-body"></pre>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
