@@ -54,6 +54,8 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 
 **关键结果**：**官方环境成功已复现**——社区 aadarshram ACT @seed1000 ep0 覆盖率 0.9534（>0.95，134 步完成，成功率 1/5）；MuJoCo 环境最高 0.865（pymunk↔MuJoCo 接触动力学差异导致小幅迁移差距）。自训 25k 与社区权重水平相当；均未达高成功率（欠训练，与管线无关）。
 
+**「推动后立刻停下」物理修复（2026-08-17）**：用户对比视频发现官方环境推完即停、MuJoCo 却一直滑/转。定量诊断定位到根因——T 块 COM 在推点下方，每次推都是偏心踢击；pymunk 刚性接触瞬间耗散踢击能量，MuJoCo 软接触不耗散导致块绕推头圆柱持续旋转飞走（偏心推旋转 62.7° vs 官方 10.4°）。修复：块关节 damping=5 + agent/块摩擦 2 + 墙摩擦 0（对齐 pymunk）。修复后偏心推旋转 13.1°、推完立刻静止；rollout 奖励总和 10.75→21.93（+104%，块能停住保持覆盖率），成功率仍 0/10（0.95 上限是策略/像素迁移剩余差异）。详见 `note/04_MuJoCo_PushT_复现总结.md` §3.6。
+
 ## 5. 常用入口命令
 
 ```bash
@@ -84,3 +86,4 @@ python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
 ## 8. 更新日志
 
 - 2026-08-17：创建；PushT 主线完成、GitHub 推送、gui/docs/AI_CONTEXT 建立
+- 2026-08-17：§4 追加「推动后立刻停下」物理修复（块关节阻尼 5 + 摩擦对齐 pymunk），详见 note 04 §3.6
