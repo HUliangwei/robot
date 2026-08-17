@@ -143,10 +143,19 @@ async function openProject(name) {
   const r = await fetch("/api/project/" + encodeURIComponent(name));
   const data = await r.json();
   mainEl.innerHTML = `<h2>📁 ${name}</h2>
+    <div class="card" id="readme-view"></div>
     <div class="card" id="progress-view">${md(data.progress || "（无 PROGRESS.md）")}</div>
     <div class="card"><h3>⚡ 常用命令</h3><div id="commands"></div></div>
     <div class="card"><h3>🎬 产出（视频 / 图表）</h3><div class="gallery" id="gallery"></div></div>
     <div class="card"><h3>📂 全部文件</h3><div id="files"></div></div>`;
+  // README 项目介绍（如存在）
+  const rm = await fetch("/proj/" + encodeURIComponent(name) + "/file/README.md");
+  if (rm.ok) {
+    const rmd = await rm.text();
+    $("#readme-view").innerHTML = `<div class="readme-tag">📖 项目介绍（README.md）</div>` + md(rmd);
+  } else {
+    $("#readme-view").innerHTML = "";
+  }
   const cmds = $("#commands");
   if (!data.commands.length) cmds.innerHTML = '<p class="hint">（无 commands.json）</p>';
   for (const c of data.commands) {

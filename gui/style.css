@@ -65,3 +65,4 @@ aside .nav { margin-top: .4rem; }
 aside .nav + .nav { border-top: 1px solid var(--line); padding-top: .4rem; }
 aside .danger { color: #c62828; }
 #global-files li a { font-size: .82rem; }
+.readme-tag { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--line); padding-bottom: .4rem; margin-bottom: .6rem; }

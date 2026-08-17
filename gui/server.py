@@ -158,6 +158,8 @@ def start_run(proj_name, cmd, cwd):
     env = dict(os.environ)
     env["HF_HOME"] = hf_home
     env.setdefault("HF_HUB_CACHE", os.path.join(hf_home, "hub"))
+    # python stdout 重定向到文件时默认块缓冲，导致 GUI 轮询读不到实时输出 -> 强制无缓冲
+    env.setdefault("PYTHONUNBUFFERED", "1")
     with open(log, "w", encoding="utf-8") as lf:
         proc = subprocess.Popen(full, cwd=resolved_cwd, stdout=lf, stderr=subprocess.STDOUT, env=env)
     with run_lock:
