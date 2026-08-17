@@ -2,13 +2,15 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>robot · 具身学习工作台</title>
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <header>
+  <span class="brand-dot"></span>
   <h1>🤖 robot 具身学习工作台</h1>
-  <div class="sub">LeRobot × MuJoCo · 数据集 / 模型 / 训练 / 推理·仿真 / 分析 · 命令实时可视</div>
+  <div class="sub">LeRobot × MuJoCo · 数据集 / 模型和权重 / 训练 / 推理·仿真 / 分析 · 命令实时可视</div>
 </header>
 
 <aside id="sidebar">
@@ -18,15 +20,14 @@
   <h3>工作台</h3>
   <ul class="nav">
     <li><a href="#" id="nav-datasets">📊 数据集</a></li>
-    <li><a href="#" id="nav-models">🧠 模型与架构</a></li>
+    <li><a href="#" id="nav-models">🧠 模型和权重</a></li>
     <li><a href="#" id="nav-train">🎓 训练</a></li>
     <li><a href="#" id="nav-infer">🚀 推理 · 仿真</a></li>
     <li><a href="#" id="nav-analysis">📈 分析</a></li>
     <li><a href="#" id="nav-report">🖼 推理报告</a></li>
   </ul>
   <h3>全局文件</h3>
-  <ul class="nav" id="global-files">
-  </ul>
+  <ul class="nav" id="global-files"></ul>
   <ul class="nav">
     <li><a href="#" id="nav-shutdown" class="danger">⏻ 关闭服务</a></li>
   </ul>
@@ -35,22 +36,25 @@
 <main id="main">
   <section id="welcome">
     <h2>欢迎 👋</h2>
-    <p>左侧「工作台」可管理<strong>数据集</strong>、<strong>模型</strong>、发起<strong>训练</strong>与<strong>推理·仿真</strong>、查看<strong>分析</strong>；
-       选择小项目查看进度/命令/产出/全部文件。</p>
-    <p class="hint">所有操作都在本地执行，控制台会实时显示正在执行的命令与输出。</p>
+    <p>左侧「工作台」管理<strong>数据集</strong>、<strong>模型和权重</strong>、发起<strong>训练</strong>与<strong>推理·仿真</strong>、查看<strong>分析</strong>。
+       <strong>底部终端</strong>会显示每一步操作对应的完整命令与实时输出，辅助熟悉命令行。</p>
+    <p class="hint">所有操作在本地执行；网页随窗口自适应缩放。</p>
   </section>
 </main>
 
-<div id="console-overlay" class="hidden">
-  <div class="console-head">
-    <span id="console-title">命令输出</span>
-    <span id="console-head-cmd"></span>
-    <button id="console-kill">停止</button>
-    <button id="console-close">关闭</button>
+<div id="console-dock" class="closed">
+  <div class="console-bar">
+    <span class="pulse idle" id="console-pulse"></span>
+    <span class="console-title" id="console-title">终端</span>
+    <span class="console-cmd" id="console-head-cmd"></span>
+    <span class="console-actions">
+      <button id="console-toggle">展开 ▴</button>
+      <button id="console-kill">停止</button>
+    </span>
   </div>
   <pre id="console-body"></pre>
 </div>
 
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>

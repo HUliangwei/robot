@@ -248,7 +248,9 @@ def build_train_cmd(b):
     policy = (b.get("policy") or "act").strip()
     steps = int(b.get("steps") or 5000)
     batch = int(b.get("batch_size") or 8)
-    outdir = (b.get("output_dir") or "").strip() or "outputs/train/act_gui"
+    chunk = b.get("chunk_size")
+    save_freq = b.get("save_freq")
+    outdir = (b.get("output_dir") or "").strip() or "outputs/train/tmp"  # 默认临时目录，下次训练覆盖
     outdir = outdir.replace("\\", "/").strip("/")
     if outdir.startswith(".."):
         raise ValueError("输出目录必须是项目内相对路径（不允许 ..）")
@@ -259,10 +261,15 @@ def build_train_cmd(b):
         root = "--dataset.root=D:/Desktop/robot/datasets "
     else:
         task_arg, root = "", ""
+    extra = ""
+    if chunk:
+        extra += f"--policy.chunk_size={chunk} "
+    if save_freq:
+        extra += f"--save_freq={save_freq} "
     cmd = (f"python -m lerobot.scripts.lerobot_train {task_arg}--dataset.repo_id={dataset} {root}"
            f"--policy.type={policy} --policy.push_to_hub=false "
            f"--output_dir={outdir} --steps={steps} --batch_size={batch} "
-           f"--save_freq=5000 --eval_steps=0 --env_eval_freq=0 --wandb.enable=false")
+           f"{extra}--eval_steps=0 --env_eval_freq=0 --wandb.enable=false")
     cwd = f"workspace/{project}"
     return cmd, project, cwd
 
@@ -438,6 +445,24 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(scan_models(), ensure_ascii=False))
         if path == "/api/analysis":
             return self._send(200, json.dumps(find_metrics(), ensure_ascii=False))
+        if path.startswith("/api/dataset_detail"):
+            q = urlparse(self.path).query
+            import urllib.parse
+
+            repo = urllib.parse.parse_qs(q).get("repo_id", [""])[0]
+            info, stats = {}, {}
+            for repo_id, snap in hub_dirs("datasets"):
+                if repo_id == repo:
+                    for name, d in (("meta/info.json", info), ("meta/stats.json", stats)):
+                        fp = os.path.join(snap, name)
+                        if os.path.exists(fp):
+                            try:
+                                d.update(json.load(open(fp, encoding="utf-8")))
+                            except Exception:
+                                pass
+            if not info and not stats:
+                return self._send(404, json.dumps({"error": "dataset not found"}))
+            return self._send(200, json.dumps({"repo_id": repo, "info": info, "stats": stats}, ensure_ascii=False))
         if path.startswith("/api/models_config"):
             q = urlparse(self.path).query
             import urllib.parse
@@ -517,6 +542,44 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({"run_id": run_id}))
             except Exception as e:
                 return self._send(500, json.dumps({"error": str(e)}))
+        if u.path == "/api/models/import":
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            repo = (body.get("repo_id") or "").strip()
+            if not repo:
+                return self._send(400, json.dumps({"error": "缺少 repo_id"}))
+            import shlex as _shlex
+
+            # 用 huggingface_hub 的 snapshot_download 下载（经代理 + 禁 xet 更稳）
+            cmd = ("python -c \"import os; from huggingface_hub import snapshot_download; "
+                   f"print('OK:', snapshot_download('{repo}'))\"")
+            try:
+                run_id = start_run("libero", cmd, "workspace/libero")
+                return self._send(200, json.dumps({"run_id": run_id, "cmd": cmd}))
+            except Exception as e:
+                return self._send(500, json.dumps({"error": str(e)}))
+        if u.path == "/api/models/delete":
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            p = (body.get("path") or "").strip()
+            base_hub = os.path.join(os.environ.get("HF_HOME", os.path.join(ROBOT, "datasets")), "hub")
+            target = None
+            if "models--" in p:
+                # HF 缓存：定位到 models--<org>--<name> 仓库根
+                idx = p.find("models--")
+                end = p.find(os.sep, idx)
+                target = p[: end] if end > 0 else p
+            elif "checkpoints" in p and p.startswith(os.path.join(WORKSPACE, "embodied_learning", "outputs")):
+                # 本地 checkpoint：.../checkpoints/<step>/pretrained_model -> .../checkpoints/<step>
+                target = os.path.dirname(os.path.dirname(p))
+            if target is None or not target.startswith(base_hub) and not target.startswith(os.path.join(WORKSPACE, "embodied_learning", "outputs")):
+                return self._send(400, json.dumps({"error": "只允许删除模型缓存或本地 checkpoint"}))
+            import shutil
+
+            if os.path.isdir(target):
+                shutil.rmtree(target)
+                return self._send(200, json.dumps({"ok": True, "deleted": target}))
+            return self._send(400, json.dumps({"error": "路径不存在"}))
         if u.path == "/api/create_project":
             ln = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(ln) or b"{}")
