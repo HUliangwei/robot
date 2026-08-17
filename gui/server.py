@@ -256,7 +256,7 @@ def build_train_cmd(b):
     project = "libero" if "libero" in dataset else "embodied_learning"
     if project == "libero":
         task_arg = f"--env.type=libero --env.task={env_task or 'libero_spatial'} --env.task_ids=[0] "
-        root = "--dataset.root=D:\\Desktop\\robot\\datasets "
+        root = "--dataset.root=D:/Desktop/robot/datasets "
     else:
         task_arg, root = "", ""
     cmd = (f"python -m lerobot.scripts.lerobot_train {task_arg}--dataset.repo_id={dataset} {root}"
@@ -275,7 +275,7 @@ def build_infer_cmd(b):
     - libero: lerobot_eval 固定写到 <cwd>/outputs/eval/<时间戳>_<模型>/
     """
     env_kind = (b.get("env") or "libero").strip()
-    policy = (b.get("policy_path") or "").strip()
+    policy = (b.get("policy_path") or "").strip().replace("\\", "/")  # shlex 会吃反斜杠，统一正斜杠
     episodes = int(b.get("episodes") or 3)
     outdir = (b.get("outdir") or "").strip() or "outputs/rollout_gui"
     outdir = outdir.replace("\\", "/").strip("/")
@@ -558,7 +558,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 cmd, proj, cwd = build_train_cmd(body)
                 run_id = start_run(proj, cmd, cwd)
-                return self._send(200, json.dumps({"run_id": run_id, "cmd": cmd, "cwd": cwd}))
+                return self._send(200, json.dumps({"run_id": run_id, "project": proj, "cmd": cmd, "cwd": cwd}))
             except Exception as e:
                 return self._send(400, json.dumps({"error": str(e)}))
         if u.path == "/api/infer":
@@ -567,7 +567,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 cmd, proj, cwd, out_root = build_infer_cmd(body)
                 run_id = start_run(proj, cmd, cwd)
-                return self._send(200, json.dumps({"run_id": run_id, "cmd": cmd, "cwd": cwd, "out_root": out_root}))
+                return self._send(200, json.dumps({"run_id": run_id, "project": proj, "cmd": cmd, "cwd": cwd, "out_root": out_root}))
             except Exception as e:
                 return self._send(400, json.dumps({"error": str(e)}))
         if u.path.startswith("/api/run/"):
