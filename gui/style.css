@@ -66,3 +66,31 @@ aside .nav + .nav { border-top: 1px solid var(--line); padding-top: .4rem; }
 aside .danger { color: #c62828; }
 #global-files li a { font-size: .82rem; }
 .readme-tag { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--line); padding-bottom: .4rem; margin-bottom: .6rem; }
+
+/* ---- workbench: datasets / models / train / infer / analysis ---- */
+.toolbar { display: flex; gap: .6rem; margin: .6rem 0 1rem; }
+table { font-size: .85rem; }
+td.small { font-size: .75rem; color: var(--muted); }
+.model-card { border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem; margin-bottom: .8rem; background: #fcfdfe; }
+.model-head { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.model-name { font-weight: 600; font-size: .95rem; }
+.model-src { font-size: .75rem; color: var(--muted); }
+.model-meta { font-size: .8rem; color: var(--muted); margin: .3rem 0; }
+.model-path { font-size: .75rem; font-family: Consolas, monospace; color: #57606a; word-break: break-all; margin-bottom: .5rem; }
+.model-actions { display: flex; gap: .5rem; }
+.badge { padding: .15rem .5rem; border-radius: 10px; font-size: .72rem; color: #fff; }
+.badge-act { background: #1f77b4; }
+.badge-vla { background: #d62728; }
+.badge-other { background: #7f7f7f; }
+.metric { display: inline-block; background: #eef3f8; border-radius: 6px; padding: .15rem .5rem; margin: .15rem .3rem .15rem 0; font-size: .78rem; font-family: Consolas, monospace; }
+.form-row { display: flex; align-items: center; gap: .8rem; margin-bottom: .7rem; flex-wrap: wrap; }
+.form-row label { width: 110px; font-size: .85rem; color: var(--muted); }
+.form-row input, .form-row select { flex: 1; min-width: 220px; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: 6px; font-size: .85rem; }
+.form-row button { flex: 0 0 auto; }
+.arch { display: flex; flex-direction: column; gap: .8rem; padding: .4rem 0; }
+.arch-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.arch-box { border: 2px solid; border-radius: 8px; padding: .5rem .8rem; background: #fff; min-width: 150px; }
+.arch-label { font-weight: 600; font-size: .85rem; }
+.arch-sub { font-size: .72rem; color: var(--muted); }
+.arch-arrow { font-size: 1.2rem; color: var(--muted); }
+.arch-note { font-size: .8rem; color: var(--muted); border-left: 3px solid var(--acc); padding-left: .8rem; }

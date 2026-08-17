@@ -2,21 +2,30 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>robot · 项目仪表盘</title>
+<title>robot · 具身学习工作台</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
-  <h1>🤖 robot 项目仪表盘</h1>
-  <div class="sub">LeRobot × MuJoCo 学习工作区 · 本地可视化 / 命令运行 / 进度跟踪</div>
+  <h1>🤖 robot 具身学习工作台</h1>
+  <div class="sub">LeRobot × MuJoCo · 数据集 / 模型 / 训练 / 推理·仿真 / 分析 · 命令实时可视</div>
 </header>
 
 <aside id="sidebar">
   <h3>小项目</h3>
   <ul id="project-list"></ul>
-  <h3>全局</h3>
+  <p class="hint" style="padding:0 .6rem"><a href="#" id="nav-new-project" class="file-link">＋ 新建小项目</a></p>
+  <h3>工作台</h3>
+  <ul class="nav">
+    <li><a href="#" id="nav-datasets">📊 数据集</a></li>
+    <li><a href="#" id="nav-models">🧠 模型与架构</a></li>
+    <li><a href="#" id="nav-train">🎓 训练</a></li>
+    <li><a href="#" id="nav-infer">🚀 推理 · 仿真</a></li>
+    <li><a href="#" id="nav-analysis">📈 分析</a></li>
+    <li><a href="#" id="nav-report">🖼 推理报告</a></li>
+  </ul>
+  <h3>全局文件</h3>
   <ul class="nav" id="global-files">
-    <li><a href="#" id="nav-report">📊 推理报告</a></li>
   </ul>
   <ul class="nav">
     <li><a href="#" id="nav-shutdown" class="danger">⏻ 关闭服务</a></li>
@@ -26,8 +35,9 @@
 <main id="main">
   <section id="welcome">
     <h2>欢迎 👋</h2>
-    <p>左侧选择小项目查看进度、运行命令、浏览产出视频与图表。</p>
-    <p class="hint">命令在本地执行（使用项目 conda 环境 python），输出实时流式显示。</p>
+    <p>左侧「工作台」可管理<strong>数据集</strong>、<strong>模型</strong>、发起<strong>训练</strong>与<strong>推理·仿真</strong>、查看<strong>分析</strong>；
+       选择小项目查看进度/命令/产出/全部文件。</p>
+    <p class="hint">所有操作都在本地执行，控制台会实时显示正在执行的命令与输出。</p>
   </section>
 </main>
 

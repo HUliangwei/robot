@@ -12,8 +12,10 @@ Features:
 """
 import json
 import os
+import re
 import shlex
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -92,6 +94,192 @@ def content_type_for(fp, ext=None):
         "csv": "text/csv; charset=utf-8", "css": "text/css; charset=utf-8",
         "js": "application/javascript; charset=utf-8", "ipynb": "application/json; charset=utf-8",
     }.get(ext, "application/octet-stream")
+
+
+# ---------------------------------------------------------------- datasets / models / metrics
+
+def hub_dirs(kind):
+    """Yield (repo_id, snapshot_dir) for cached HF repos of a kind ('models' | 'datasets')."""
+    base = os.path.join(os.environ.get("HF_HOME", os.path.join(ROBOT, "datasets")), "hub")
+    prefix = f"{kind}--"
+    if not os.path.isdir(base):
+        return
+    for d in sorted(os.listdir(base)):
+        if not d.startswith(prefix):
+            continue
+        repo_id = d[len(prefix):].replace("--", "/")
+        snap = os.path.join(base, d, "snapshots")
+        if os.path.isdir(snap):
+            snaps = sorted(os.listdir(snap))
+            if snaps:
+                yield repo_id, os.path.join(snap, snaps[-1])
+
+
+def scan_datasets():
+    out = []
+    seen = set()
+    for repo_id, snap in hub_dirs("datasets"):
+        seen.add(repo_id)
+        info = {}
+        fp = os.path.join(snap, "meta", "info.json")
+        if os.path.exists(fp):
+            try:
+                info = json.load(open(fp, encoding="utf-8"))
+            except Exception:
+                pass
+        sz = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(snap) for f in fs)
+        out.append({
+            "repo_id": repo_id, "source": "hf-cache", "size_mb": round(sz / 1e6, 1),
+            "episodes": info.get("total_episodes"), "frames": info.get("total_frames"),
+            "fps": info.get("fps"), "features": list((info.get("features") or {}).keys()),
+            "robot": info.get("robot_type"),
+        })
+    # local lerobot-format datasets under datasets/lerobot
+    lroot = os.path.join(ROBOT, "datasets", "lerobot")
+    if os.path.isdir(lroot):
+        for name in sorted(os.listdir(lroot)):
+            base = os.path.join(lroot, name)
+            if not os.path.isdir(base) or name in seen or name.startswith("."):
+                continue
+            info = {}
+            fp = os.path.join(base, "meta", "info.json")
+            if os.path.exists(fp):
+                try:
+                    info = json.load(open(fp, encoding="utf-8"))
+                except Exception:
+                    pass
+            sz = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(base) for f in fs)
+            out.append({
+                "repo_id": f"lerobot/{name}", "source": "local", "size_mb": round(sz / 1e6, 1),
+                "episodes": info.get("total_episodes"), "frames": info.get("total_frames"),
+                "fps": info.get("fps"), "features": list((info.get("features") or {}).keys()),
+                "robot": info.get("robot_type"),
+            })
+    return sorted(out, key=lambda d: d["repo_id"])
+
+
+def scan_models():
+    out = []
+    for repo_id, snap in hub_dirs("models"):
+        cfg_path = os.path.join(snap, "config.json")
+        if not os.path.exists(cfg_path):
+            continue
+        try:
+            cfg = json.load(open(cfg_path, encoding="utf-8"))
+        except Exception:
+            continue
+        ptype = cfg.get("type") or cfg.get("policy_type") or "?"
+        entry = {
+            "name": repo_id, "source": "hf-cache", "type": ptype, "path": snap,
+            "chunk_size": cfg.get("chunk_size"), "n_obs_steps": cfg.get("n_obs_steps"),
+            "vision_backbone": cfg.get("vision_backbone"), "model_id": cfg.get("model_id"),
+            "params_M": None, "input_features": list((cfg.get("input_features") or {}).keys()),
+        }
+        out.append(entry)
+    # local trained checkpoints: workspace/*/outputs/train/*/checkpoints/*/pretrained_model
+    for proj in os.listdir(WORKSPACE):
+        tdir = os.path.join(WORKSPACE, proj, "outputs", "train")
+        if not os.path.isdir(tdir):
+            continue
+        for run in sorted(os.listdir(tdir)):
+            ckpts = os.path.join(tdir, run, "checkpoints")
+            if not os.path.isdir(ckpts):
+                continue
+            for ck in sorted(os.listdir(ckpts)):
+                pm = os.path.join(ckpts, ck, "pretrained_model")
+                cfg_path = os.path.join(pm, "config.json")
+                if not os.path.exists(cfg_path):
+                    continue
+                try:
+                    cfg = json.load(open(cfg_path, encoding="utf-8"))
+                except Exception:
+                    continue
+                out.append({
+                    "name": f"{proj}/{run}/{ck}", "source": "local", "type": cfg.get("type", "?"),
+                    "path": pm, "chunk_size": cfg.get("chunk_size"), "n_obs_steps": cfg.get("n_obs_steps"),
+                    "vision_backbone": cfg.get("vision_backbone"), "model_id": cfg.get("model_id"),
+                    "params_M": None, "input_features": list((cfg.get("input_features") or {}).keys()),
+                })
+    return sorted(out, key=lambda m: m["name"])
+
+
+def find_metrics():
+    """Scan projects for metrics.json / metrics.txt and extract summaries."""
+    out = []
+    for proj in sorted(os.listdir(WORKSPACE)):
+        base = os.path.join(WORKSPACE, proj, "outputs")
+        if not os.path.isdir(base):
+            continue
+        for root, _, files in os.walk(base):
+            for f in files:
+                if f not in ("metrics.json", "metrics.txt"):
+                    continue
+                fp = os.path.join(root, f)
+                rel = os.path.relpath(fp, os.path.join(WORKSPACE, proj)).replace(os.sep, "/")
+                summ = {}
+                try:
+                    if f.endswith(".json"):
+                        data = json.load(open(fp, encoding="utf-8"))
+                        for k in ("success_rate", "mean_max_coverage", "mean_sum_reward", "pc_success",
+                                  "avg_sum_reward", "max_rewards", "n_episodes", "env", "model", "steps"):
+                            if isinstance(data, dict) and k in data:
+                                summ[k] = data[k]
+                        if isinstance(data, dict) and data.get("episodes") and f.endswith(".json"):
+                            eps = data["episodes"]
+                            if isinstance(eps, list) and eps and isinstance(eps[0], dict):
+                                for k in ("max_coverage", "success", "steps", "final_coverage"):
+                                    if k in eps[0]:
+                                        summ["ep0_" + k] = eps[0][k]
+                    else:
+                        summ["raw"] = open(fp, encoding="utf-8", errors="replace").read()[:800]
+                except Exception:
+                    summ = {"error": "parse failed"}
+                out.append({"project": proj, "rel": rel, "summary": summ})
+    return out
+
+
+def build_train_cmd(b):
+    """Generate a lerobot_train command from the training form. Returns (cmd, project, cwd)."""
+    dataset = (b.get("dataset") or "").strip()
+    policy = (b.get("policy") or "act").strip()
+    steps = int(b.get("steps") or 5000)
+    batch = int(b.get("batch_size") or 8)
+    outdir = (b.get("output_dir") or "").strip() or "outputs/train/act_gui"
+    env_task = (b.get("env_task") or "").strip()
+    project = "libero" if "libero" in dataset else "embodied_learning"
+    if project == "libero":
+        task_arg = f"--env.type=libero --env.task={env_task or 'libero_spatial'} --env.task_ids=[0] "
+        root = "--dataset.root=D:\\Desktop\\robot\\datasets "
+    else:
+        task_arg, root = "", ""
+    cmd = (f"python -m lerobot.scripts.lerobot_train {task_arg}--dataset.repo_id={dataset} {root}"
+           f"--policy.type={policy} --policy.push_to_hub=false "
+           f"--output_dir={outdir} --steps={steps} --batch_size={batch} "
+           f"--save_freq=5000 --eval_steps=0 --env_eval_freq=0 --wandb.enable=false")
+    cwd = f"workspace/{project}"
+    return cmd, project, cwd
+
+
+def build_infer_cmd(b):
+    """Generate an inference/eval command. Returns (cmd, project, cwd)."""
+    env_kind = (b.get("env") or "libero").strip()
+    policy = (b.get("policy_path") or "").strip()
+    episodes = int(b.get("episodes") or 3)
+    outdir = (b.get("outdir") or "").strip() or "outputs/rollout_gui"
+    if env_kind in ("official", "mujoco"):
+        project = "embodied_learning"
+        cwd = "workspace/embodied_learning/mujoco_basics/pusht"
+        cmd = (f"python run_pusht_rollout.py --env {env_kind} --n_episodes {episodes} "
+               f"--policy-path {policy} --outdir ../../{outdir}")
+    else:  # libero
+        project = "libero"
+        cwd = "workspace/libero"
+        task = (b.get("task") or "libero_spatial").strip()
+        task_id = b.get("task_ids") or "[0]"
+        cmd = (f"python -m lerobot.scripts.lerobot_eval --env.type=libero --env.task={task} "
+               f"--env.task_ids={task_id} --env.max_parallel_tasks=1 --eval.use_async_envs=false "
+               f"--eval.batch_size=1 --policy.path={policy} --eval.n_episodes={episodes}")
+    return cmd, project, cwd
 
 
 def find_projects():
@@ -227,6 +415,26 @@ class Handler(BaseHTTPRequestHandler):
                 "note": list_files(os.path.join(ROBOT, "note")),
                 "docs": list_files(DOCS),
             }, ensure_ascii=False))
+        if path == "/api/datasets":
+            return self._send(200, json.dumps(scan_datasets(), ensure_ascii=False))
+        if path == "/api/models":
+            return self._send(200, json.dumps(scan_models(), ensure_ascii=False))
+        if path == "/api/analysis":
+            return self._send(200, json.dumps(find_metrics(), ensure_ascii=False))
+        if path.startswith("/api/models_config"):
+            q = urlparse(self.path).query
+            import urllib.parse
+
+            p = urllib.parse.parse_qs(q).get("path", [""])[0]
+            if ".." in p.split("/"):
+                return self._send(400, json.dumps({"error": "bad path"}))
+            cfg_fp = os.path.join(p, "config.json")
+            if not os.path.exists(cfg_fp):
+                return self._send(404, json.dumps({"error": "config not found"}))
+            try:
+                return self._send(200, json.dumps(json.load(open(cfg_fp, encoding="utf-8")), ensure_ascii=False))
+            except Exception as e:
+                return self._send(500, json.dumps({"error": str(e)}))
         if path.startswith("/proj/"):
             # serve project / repo files statically
             parts = path.split("/")[2:]  # [name, out|doc|file|root|note, ...]
@@ -292,6 +500,59 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({"run_id": run_id}))
             except Exception as e:
                 return self._send(500, json.dumps({"error": str(e)}))
+        if u.path == "/api/create_project":
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            name = (body.get("name") or "").strip()
+            desc = (body.get("desc") or "新小项目").strip()
+            if not re.fullmatch(r"[A-Za-z0-9_\-]+", name or ""):
+                return self._send(400, json.dumps({"error": "项目名只能含字母数字下划线"}))
+            base = os.path.join(WORKSPACE, name)
+            if os.path.exists(base):
+                return self._send(400, json.dumps({"error": "项目已存在"}))
+            os.makedirs(base, exist_ok=True)
+            open(os.path.join(base, "README.md"), "w", encoding="utf-8").write(
+                f"# {name} — 新小项目\n\n> {desc}\n\n## 状态\n\n待补充：数据集 / 模型 / 训练 / 推理 / 仿真 / 分析\n")
+            open(os.path.join(base, "PROGRESS.md"), "w", encoding="utf-8").write(
+                f"# PROGRESS — {name}\n\n## 项目一句话\n\n{desc}\n\n## 当前状态\n\n| 阶段 | 状态 | 说明 |\n|---|---|---|\n| 骨架 | ✅ | README / PROGRESS / commands |\n\n## 更新日志\n\n- 2026-08-17：创建项目骨架\n")
+            open(os.path.join(base, "commands.json"), "w", encoding="utf-8").write(
+                json.dumps({"project": name, "description": desc,
+                            "python": os.path.join(sys.prefix, "python.exe"),
+                            "hf_home": os.path.join(ROBOT, "datasets"),
+                            "commands": [{"name": "环境自检", "cmd": "python -c \"print('hello')\"",
+                                          "cwd": f"workspace/{name}", "desc": "骨架占位命令"}]},
+                           ensure_ascii=False, indent=2))
+            return self._send(200, json.dumps({"ok": True, "name": name}))
+        if u.path == "/api/datasets/import":
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            repo = (body.get("repo_id") or "").strip()
+            if not repo:
+                return self._send(400, json.dumps({"error": "缺少 repo_id"}))
+            cmd = f"python -m lerobot.scripts.lerobot_info --dataset.repo_id={repo}"
+            try:
+                run_id = start_run("libero", cmd, "workspace/libero")
+                return self._send(200, json.dumps({"run_id": run_id, "cmd": cmd}))
+            except Exception as e:
+                return self._send(500, json.dumps({"error": str(e)}))
+        if u.path == "/api/train":
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            try:
+                cmd, proj, cwd = build_train_cmd(body)
+                run_id = start_run(proj, cmd, cwd)
+                return self._send(200, json.dumps({"run_id": run_id, "cmd": cmd, "cwd": cwd}))
+            except Exception as e:
+                return self._send(400, json.dumps({"error": str(e)}))
+        if u.path == "/api/infer":
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            try:
+                cmd, proj, cwd = build_infer_cmd(body)
+                run_id = start_run(proj, cmd, cwd)
+                return self._send(200, json.dumps({"run_id": run_id, "cmd": cmd, "cwd": cwd}))
+            except Exception as e:
+                return self._send(400, json.dumps({"error": str(e)}))
         if u.path.startswith("/api/run/"):
             parts = u.path.split("/")
             run_id = parts[3]
