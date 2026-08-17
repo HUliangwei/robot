@@ -179,6 +179,14 @@ def main():
         for f in frames:
             writer.write(cv2.cvtColor(f, cv2.COLOR_RGB2BGR))
         writer.release()
+        # GIF 供浏览器预览（mp4v 编码浏览器不支持）
+        try:
+            import imageio.v2 as iio
+
+            gif_path = os.path.splitext(path)[0] + ".gif"
+            iio.mimsave(gif_path, frames, fps=10)
+        except Exception as e:
+            print("gif save skipped:", e)
         print(f"ep {ep}: steps={step} success={success} -> {path}")
 
     if args.stream_dir:

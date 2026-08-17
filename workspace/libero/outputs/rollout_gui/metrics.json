@@ -1,0 +1,26 @@
+{
+  "policy": "D:/Desktop/robot/datasets/hub/models--HuggingFaceVLA--smolvla_libero/snapshots/6721902bc4d61e50a3bfdb11dfb4cb626f05d102",
+  "task": "libero_spatial",
+  "task_id": 0,
+  "instruction": "pick up the black bowl between the plate and the ramekin and place it on the plate",
+  "n_episodes": 3,
+  "success_rate": 0.0,
+  "elapsed_s": 1950.5,
+  "episodes": [
+    {
+      "episode": 0,
+      "steps": 84,
+      "success": false
+    },
+    {
+      "episode": 1,
+      "steps": 500,
+      "success": false
+    },
+    {
+      "episode": 2,
+      "steps": 500,
+      "success": false
+    }
+  ]
+}

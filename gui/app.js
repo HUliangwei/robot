@@ -56,6 +56,37 @@ function fmtSize(n) {
 }
 const MEDIA_EXT = ["mp4", "gif", "png", "jpg", "jpeg", "svg", "webp"];
 
+// 浏览器优先显示 GIF（mp4v 编码浏览器不支持）；mp4 作为下载链接
+function mediaFigure(project, candidates) {
+  const gif = candidates.find((c) => c.path.endsWith(".gif"));
+  const mp4 = candidates.find((c) => c.path.endsWith(".mp4"));
+  const src = gif || mp4 || candidates[0];
+  if (!src) return "";
+  const fig = document.createElement("figure");
+  const cap = document.createElement("figcaption");
+  cap.textContent = src.path.split("/").pop();
+  if (gif || !mp4) {
+    const im = document.createElement("img");
+    im.loading = "lazy";
+    im.src = "/proj/" + encodeURIComponent(project) + "/file/" + encodeURIComponent(src.path);
+    fig.appendChild(im);
+  } else {
+    const v = document.createElement("video");
+    v.controls = true;
+    v.src = "/proj/" + encodeURIComponent(project) + "/file/" + encodeURIComponent(mp4.path);
+    fig.appendChild(v);
+  }
+  if (mp4 && gif) {
+    const dl = document.createElement("a");
+    dl.href = "/proj/" + encodeURIComponent(project) + "/file/" + encodeURIComponent(mp4.path);
+    dl.textContent = " ⬇ mp4";
+    dl.style.fontSize = ".72rem";
+    cap.appendChild(dl);
+  }
+  fig.appendChild(cap);
+  return fig;
+}
+
 // ---------------- console dock ----------------
 const dock = () => $("#console-dock");
 let _drag = null;
@@ -89,6 +120,21 @@ $("#console-toggle").onclick = () => {
 $("#console-kill").onclick = async () => {
   if (currentRunId) await fetch("/api/run/" + currentRunId + "/kill", { method: "POST" });
 };
+// GPU 监控（每 2s）
+async function pollGpu() {
+  try {
+    const r = await fetch("/api/gpu");
+    const j = await r.json();
+    const el = $("#gpu-bar");
+    if (!el) return;
+    if (!j.ok) { el.textContent = "GPU 不可用"; return; }
+    const hot = j.util > 60 ? "gpu-hot" : "";
+    el.textContent = `GPU ${j.util}% · ${j.mem_used_gb}/${j.mem_total_gb}G`;
+    el.className = "gpu " + hot;
+  } catch (e) { /* ignore */ }
+}
+setInterval(pollGpu, 2000);
+pollGpu();
 function consoleEcho(cmd, cwd) {
   const d = dock();
   d.classList.add("open"); d.classList.remove("closed");
@@ -234,21 +280,17 @@ async function openProject(name) {
   }
   const gal = $("#gallery");
   if (!data.artifacts.length) gal.innerHTML = '<p class="hint">（无产出文件）</p>';
-  for (const a of data.artifacts) {
-    const fig = document.createElement("figure");
-    const cap = document.createElement("figcaption");
-    cap.textContent = a.name;
-    if (a.name.endsWith(".mp4")) {
-      const v = document.createElement("video");
-      v.controls = true; v.src = a.url;
-      fig.appendChild(v);
-    } else {
-      const im = document.createElement("img");
-      im.loading = "lazy"; im.src = a.url;
-      fig.appendChild(im);
+  else {
+    // 按 basename 分组，mp4+gif 成对（浏览器显示 gif）
+    const byStem = {};
+    for (const a of data.artifacts) {
+      const stem = a.name.replace(/\.(mp4|gif)$/i, "");
+      (byStem[stem] = byStem[stem] || []).push({ path: a.name });
     }
-    fig.appendChild(cap);
-    gal.appendChild(fig);
+    for (const group of Object.values(byStem)) {
+      const fig = mediaFigure(name, group);
+      if (fig) gal.appendChild(fig);
+    }
   }
   const filesEl = $("#files");
   filesEl.innerHTML = '<p class="hint">加载中…</p>';
@@ -277,14 +319,51 @@ async function projectReport(name) {
       <td><a class="file-link" href="#" data-url="/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(it.rel)}" data-name="${esc(it.rel)}">打开</a></td></tr>`;
   }).join("");
   const files = await (await fetch("/api/project_files/" + encodeURIComponent(name))).json();
-  const vids = files.filter((f) => /\.(mp4|gif)$/.test(f.path)).slice(0, 6)
-    .map((v) => `<figure><video controls src="/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(v.path)}" style="width:100%;max-height:180px;border-radius:10px;background:#0f1520"></video><figcaption class="hint">${esc(v.path.split("/").pop())}</figcaption></figure>`).join("");
-  mainEl.innerHTML = `<h2>📊 项目报告 · ${esc(name)} <button class="secondary" onclick="window.print()">🖨 打印/导出 PDF</button> <button class="secondary" id="rep-back">← 返回项目</button></h2>
+  const vids = files.filter((f) => /\.(mp4|gif)$/.test(f.path)).slice(0, 12);
+  const byStem = {};
+  for (const v of vids) {
+    const stem = v.path.split("/").pop().replace(/\.(mp4|gif)$/i, "");
+    (byStem[stem] = byStem[stem] || []).push(v);
+  }
+  const vidsHtml = Object.values(byStem).map((g) => {
+    const gif = g.find((c) => c.path.endsWith(".gif"));
+    const mp4 = g.find((c) => c.path.endsWith(".mp4"));
+    const s = gif || mp4;
+    if (!s) return "";
+    const src = `/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(s.path)}`;
+    const dl = mp4 && gif ? ` <a class="file-link" href="${`/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(mp4.path)}`}">⬇mp4</a>` : "";
+    return `<figure>${gif ? `<img src="${src}" style="width:100%;max-height:180px;border-radius:10px;background:#0f1520">` : `<video controls src="${src}" style="width:100%;max-height:180px;border-radius:10px;background:#0f1520"></video>`}<figcaption class="hint">${esc(s.path.split("/").pop())}${dl}</figcaption></figure>`;
+  }).join("");
+  mainEl.innerHTML = `<h2>📊 项目报告 · ${esc(name)} <button class="secondary" onclick="window.print()">🖨 打印/导出 PDF</button> <button class="secondary" id="rep-export">⬇ 导出静态 HTML</button> <button class="secondary" id="rep-back">← 返回项目</button></h2>
+    <div id="rep-body">
     <div class="card"><h3>📖 项目介绍</h3><div id="rep-readme">${md(readme)}</div></div>
     <div class="card"><h3>📈 评估/推理指标（${mine.length} 项）</h3>
       <table><thead><tr><th>结果文件</th><th>摘要</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">（暂无）</td></tr>'}</tbody></table></div>
-    <div class="card"><h3>🎬 推理视频（最新 6 个）</h3><div class="gallery">${vids || '<p class="hint">（暂无）</p>'}</div></div>`;
+    <div class="card"><h3>🎬 推理视频（最新 12 个）</h3><div class="gallery">${vidsHtml || '<p class="hint">（暂无）</p>'}</div></div>
+    </div>`;
   $("#rep-back").onclick = () => openProject(name);
+  $("#rep-export").onclick = async () => {
+    const css = `body{font-family:Inter,'Microsoft YaHei',sans-serif;background:#f5f7fa;color:#1f2733;margin:0;padding:2rem}
+      h1{font-size:1.6rem}.card{background:#fff;border:1px solid #e4e8ef;border-radius:16px;padding:1.2rem 1.4rem;margin-bottom:1rem;box-shadow:0 1px 3px rgba(16,24,40,.06)}
+      table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #e4e8ef;padding:.4rem .6rem;text-align:left;font-size:.85rem}
+      .metric{display:inline-block;background:#f0f4f9;border-radius:8px;padding:.15rem .55rem;margin:.15rem .3rem;font-size:.76rem;font-family:Consolas,monospace}
+      .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.9rem}
+      .gallery img{width:100%;max-height:220px;object-fit:contain;border:1px solid #e4e8ef;border-radius:10px;background:#0f1520}
+      figure{margin:0}.hint{color:#6b7686;font-size:.82rem}code{background:#f0f3f8;padding:.1rem .35rem;border-radius:5px}
+      #rep-body{max-width:1000px;margin:0 auto}`;
+    const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+      <title>项目报告 · ${esc(name)}</title><style>${css}</style></head>
+      <body><h1>📊 项目报告 · ${esc(name)}</h1><div id="rep-body">${$("#rep-body").innerHTML}</div>
+      <p class="hint" style="text-align:center;color:#9aa3ad;margin-top:2rem">由 robot GUI 生成 · ${new Date().toLocaleString()}</p>
+      </body></html>`;
+    const res = await fetch("/api/save_report", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: name, html }),
+    });
+    const j = await res.json();
+    if (j.url) { window.open(j.url, "_blank"); alert("已导出: docs/reports/" + name + "_report.html"); }
+    else alert("导出失败: " + (j.error || ""));
+  };
   mainEl.querySelectorAll(".file-link").forEach((el) => {
     el.onclick = (e) => { e.preventDefault(); viewFile(el.dataset.url, el.dataset.name); };
   });
@@ -342,65 +421,95 @@ async function datasetDetail(repo) {
   </div></details>`;
   $("#pv-btn").onclick = async () => {
     const out = $("#pv-out");
-    out.innerHTML = '<p class="hint">加载数据集并采样…（首次约 10-30 秒）</p>';
+    out.innerHTML = '<p class="hint">加载数据集并采样…（约 10-40 秒）</p>';
     const r = await fetch("/api/dataset_preview?repo_id=" + encodeURIComponent(repo));
     const j = await r.json();
     if (j.error) { out.innerHTML = `<p class="hint">失败: ${esc(j.error)}</p>`; return; }
-    const th = j.episodes.map((e) => `<figure style="margin:.3rem"><img src="data:image/jpeg;base64,${e.img_b64}" style="width:120px;border-radius:10px;border:1px solid var(--line)"><figcaption class="hint" style="text-align:center">ep ${e.idx}</figcaption></figure>`).join("");
     const st = j.action_stats;
-    out.innerHTML = `<div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-start">
-      <div><h4 style="margin:.3rem 0">样本帧（ep 0 / 中 / 末）</h4><div style="display:flex;gap:.5rem">${th}</div></div>
-      <div style="flex:1;min-width:280px"><h4 style="margin:.3rem 0">动作分布（${st.dims} 维，dim0 采样）</h4>
-        <canvas id="pv-canvas" width="300" height="140" style="border:1px solid var(--line);border-radius:10px;background:#fafbfc"></canvas>
-        <p class="hint">mean=${st.mean.join(",")} · std=${st.std.join(",")} · range=[${st.min.join(",")}]~[${st.max.join(",")}]</p></div>
-    </div>`;
-    drawHist($("#pv-canvas"), st.sample_dim0);
+    let html = `<div class="toolbar" style="margin-top:.6rem"><button class="secondary" id="pv-playall">▶ 全部播放</button><button class="secondary" id="pv-stop">⏹ 停止</button></div><div style="display:flex;gap:1rem;flex-wrap:wrap">`;
+    for (const e of j.episodes) {
+      html += `<div style="border:1px solid var(--line);border-radius:14px;padding:.6rem">
+        <h4 style="margin:.2rem 0">episode ${e.idx}（${e.length} 帧）</h4>
+        <div class="pv-strip" data-frames='${JSON.stringify(e.frames)}' style="display:flex;gap:3px;flex-wrap:wrap">
+          ${e.frames.map((b, i) => `<img src="data:image/jpeg;base64,${b}" style="width:96px;border-radius:8px;border:1px solid var(--line)">`).join("")}
+        </div>
+        <canvas class="pv-ts" width="420" height="120" data-series='${esc(JSON.stringify(e.action_series))}' style="width:100%;border:1px solid var(--line);border-radius:10px;background:#fafbfc;margin-top:.4rem"></canvas>
+      </div>`;
+    }
+    html += `</div>
+      <h4 style="margin:.6rem 0 .2rem">动作分布统计（${st.dims} 维）</h4>
+      <p class="hint">mean=[${st.mean.join(",")}] · std=[${st.std.join(",")}] · range=[${st.min.join(",")}]~[${st.max.join(",")}]</p>`;
+    out.innerHTML = html;
+    out.querySelectorAll(".pv-ts").forEach((cv) => drawActionSeries(cv, JSON.parse(cv.dataset.series)));
+    // 播放：轮播各 strip 的帧
+    const strips = [...out.querySelectorAll(".pv-strip")];
+    let timer = null;
+    $("#pv-stop").onclick = () => { clearInterval(timer); timer = null; };
+    $("#pv-playall").onclick = () => {
+      if (timer) { clearInterval(timer); timer = null; }
+      timer = setInterval(() => {
+        strips.forEach((st2) => {
+          const frames = JSON.parse(st2.dataset.frames);
+          const imgs = [...st2.querySelectorAll("img")];
+          const cur = imgs.findIndex((im) => im.style.borderColor === "rgb(232, 134, 60)");
+          const next = (cur + 1) % imgs.length;
+          imgs.forEach((im, i) => { im.style.borderColor = i === next ? "#e8863c" : "var(--line)"; });
+        });
+      }, 500);
+    };
   };
 }
-function drawHist(canvas, data) {
-  if (!canvas || !data || !data.length) return;
+function drawActionSeries(canvas, series) {
+  if (!canvas || !series) return;
   const ctx = canvas.getContext("2d");
-  const w = canvas.width, h = canvas.height, pad = 6;
-  const min = Math.min(...data), max = Math.max(...data);
-  const bins = 24;
-  const counts = new Array(bins).fill(0);
-  data.forEach((v) => {
-    const b = Math.min(bins - 1, Math.max(0, Math.floor(((v - min) / (max - min || 1)) * bins)));
-    counts[b]++;
+  const W = canvas.width, H = canvas.height, pad = 6;
+  ctx.clearRect(0, 0, W, H);
+  const keys = Object.keys(series);
+  if (!keys.length) return;
+  const all = keys.flatMap((k) => series[k]);
+  const min = Math.min(...all), max = Math.max(...all), span = (max - min) || 1;
+  const colors = ["#e8863c", "#1f77b4", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#6b3fa0"];
+  keys.forEach((k, di) => {
+    const data = series[k];
+    ctx.strokeStyle = colors[di % colors.length];
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    data.forEach((v, i) => {
+      const x = pad + ((W - pad * 2) * i) / Math.max(1, data.length - 1);
+      const y = H - pad - ((H - pad * 2) * (v - min)) / span;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
   });
-  const cmax = Math.max(...counts, 1);
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#e8863c";
-  counts.forEach((c, i) => {
-    const bw = (w - pad * 2) / bins;
-    const bh = (c / cmax) * (h - pad * 2);
-    ctx.fillRect(pad + i * bw, h - pad - bh, bw - 1, bh);
+  // 图例
+  ctx.font = "10px sans-serif";
+  keys.forEach((k, di) => {
+    ctx.fillStyle = colors[di % colors.length];
+    ctx.fillText(k, pad + 4 + (di % 4) * 105, 12 + Math.floor(di / 4) * 12);
   });
-  ctx.strokeStyle = "#c3cad4";
-  ctx.beginPath(); ctx.moveTo(pad, h - pad); ctx.lineTo(w - pad, h - pad); ctx.stroke();
 }
 
 // ---------------- 模型和权重视图 ----------------
-function archBox(label, sub, color) {
-  return `<div class="arch-box" style="border-color:${color}"><div class="arch-label">${esc(label)}</div>${sub ? `<div class="arch-sub">${esc(sub)}</div>` : ""}</div>`;
+function archBox(label, sub, color, kw) {
+  return `<div class="arch-box" data-kw="${esc(kw || "")}" style="border-color:${color};cursor:pointer" title="点击查看参数"><div class="arch-label">${esc(label)}</div>${sub ? `<div class="arch-sub">${esc(sub)}</div>` : ""}<div class="arch-detail" style="display:none"></div></div>`;
 }
 function archArrow() { return `<div class="arch-arrow">→</div>`; }
 function architectureHTML(m) {
   const t = m.type;
   if (t === "act") {
     return `<div class="arch">
-      <div class="arch-row">${archBox("图像 image+image2", "2×256×256×3\n观测：双相机", "#1f77b4")}${archArrow()}${archBox("ResNet18 编码", "flatten→512 维视觉特征", "#2ca02c")}${archArrow()}${archBox("Transformer Encoder", "4 层 · 8 头 · dim 512\n处理当前观测", "#ff7f0e")}</div>
-      <div class="arch-row">${archBox("状态 state", "8 维\n(关节+夹爪)", "#9467bd")}${archArrow()}${archBox("拼接 + VAE 潜变量", "latent_dim=32\n条件变分自编码", "#d62728")}</div>
-      <div class="arch-row">${archBox("Transformer Decoder", "1 层\n自回归生成动作序列", "#ff7f0e")}${archArrow()}${archBox("动作块 chunk", "100 步 × 7 维关节增量\n每 100 步重规划", "#1f77b4")}</div>
-      <div class="arch-note">ACT = 视觉直接映射动作的模仿学习网络（无语言理解）；训练用行为克隆 + VAE 正则。</div>
+      <div class="arch-row">${archBox("图像 image+image2", "2×256×256×3\n观测：双相机", "#1f77b4", "image vision input_features")}${archArrow()}${archBox("ResNet18 编码", "flatten→512 维视觉特征", "#2ca02c", "vision_backbone backbone")}${archArrow()}${archBox("Transformer Encoder", "处理当前观测", "#ff7f0e", "n_encoder_layers n_heads dim_model")}</div>
+      <div class="arch-row">${archBox("状态 state", "8 维\n(关节+夹爪)", "#9467bd", "state input_features")}${archArrow()}${archBox("拼接 + VAE 潜变量", "latent_dim=32\n条件变分自编码", "#d62728", "use_vae latent_dim kl_weight")}</div>
+      <div class="arch-row">${archBox("Transformer Decoder", "自回归生成动作序列", "#ff7f0e", "n_decoder_layers dim_feedforward")}${archArrow()}${archBox("动作块 chunk", "100 步 × 7 维关节增量\n每 100 步重规划", "#1f77b4", "chunk_size n_action_steps")}</div>
+      <div class="arch-note">点击模块查看对应超参数。ACT = 视觉直接映射动作的模仿学习网络（无语言理解）。</div>
     </div>`;
   }
   if (t === "smolvla") {
     return `<div class="arch">
-      <div class="arch-row">${archBox("图像 image+image2", "2×256×256×3", "#1f77b4")}${archArrow()}${archBox("SmolVLM2-500M 骨干", "视觉 token + 文本 token\n统一序列建模", "#2ca02c")}</div>
-      <div class="arch-row">${archBox("语言指令", "如 pick up the black bowl…\nlanguage_instruction", "#9467bd")}${archArrow()}${archBox("同上骨干", "视觉+语言联合理解\n(理解看到什么+要做什么)", "#2ca02c")}</div>
-      <div class="arch-row">${archBox("状态 state", "8 维（可选输入）", "#d62728")}${archArrow()}${archBox("动作头 Action Head", "LLM 输出 token → 动作解码", "#ff7f0e")}${archArrow()}${archBox("动作块", "100 步 × 7 维", "#1f77b4")}</div>
-      <div class="arch-note">SmolVLA = VLA：先「视觉+语言理解」再生成动作 → 一个模型可按指令执行不同任务（语言条件策略）。</div>
+      <div class="arch-row">${archBox("图像 image+image2", "2×256×256×3", "#1f77b4", "image input_features")}${archArrow()}${archBox("SmolVLM2-500M 骨干", "视觉 token + 文本 token\n统一序列建模", "#2ca02c", "model_id vlm")}</div>
+      <div class="arch-row">${archBox("语言指令", "如 pick up the black bowl…\nlanguage_instruction", "#9467bd", "task language")}${archArrow()}${archBox("同一骨干", "视觉+语言联合理解", "#2ca02c", "model_id")}</div>
+      <div class="arch-row">${archBox("状态 state", "8 维（eef+轴角+夹爪）", "#d62728", "state input_features")}${archArrow()}${archBox("动作头 Action Head", "LLM token → 动作解码", "#ff7f0e", "action")}${archArrow()}${archBox("动作块", "100 步 × 7 维", "#1f77b4", "chunk_size n_action_steps")}</div>
+      <div class="arch-note">点击模块查看对应超参数。SmolVLA = VLA：先理解再动作，一个模型按指令执行不同任务。</div>
     </div>`;
   }
   return `<p class="hint">模型类型 ${esc(t)} 暂无预设架构图，查看配置详情。</p>`;
@@ -487,8 +596,22 @@ async function modelArchView(m) {
     <div class="card"><h3>输入 / 输出特征</h3>
       <pre class="code">${esc(JSON.stringify({ input_features: cfg.input_features, output_features: cfg.output_features }, null, 2))}</pre>
     </div>
-    <button id="arch-back">← 返回模型和权重</button>`;
+    <button id="arch-back">← 返回模型</button>`;
   $("#arch-back").onclick = modelsView;
+  // 点击架构模块展开对应超参数
+  mainEl.querySelectorAll(".arch-box").forEach((box) => {
+    box.onclick = () => {
+      const detail = box.querySelector(".arch-detail");
+      const kw = (box.dataset.kw || "").toLowerCase().split(" ");
+      const rows = Object.entries(cfg).filter(([k]) => kw.some((w) => k.toLowerCase().includes(w)))
+        .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(JSON.stringify(v))}</td></tr>`).join("");
+      const show = detail.style.display === "none";
+      detail.style.display = show ? "block" : "none";
+      if (show) {
+        detail.innerHTML = rows ? `<table class="arch-params"><tbody>${rows}</tbody></table>` : '<p class="hint">（该模块无匹配超参数）</p>';
+      }
+    };
+  });
 }
 
 // ---------------- 训练视图 ----------------
@@ -504,6 +627,7 @@ async function trainView() {
       <div class="form-row"><label>batch_size</label><input id="tr-batch" type="number" value="8" min="1" class="mini"></div>
       <div class="form-row"><label>chunk_size</label><input id="tr-chunk" type="number" value="100" min="1" class="mini"></div>
       <div class="form-row"><label>save_freq</label><input id="tr-save" type="number" value="5000" min="100" class="mini"></div>
+      <div class="form-row"><label>🔁 训练中评估</label><label class="hint" style="flex:1"><input type="checkbox" id="tr-eval" style="width:auto;min-width:0"> 每 <input id="tr-evalfreq" type="number" value="5000" min="100" style="width:90px;display:inline-block"> 步在仿真环境里评估一次（边训边看成功率，会占用训练时间）</label></div>
       <div class="form-row"><label>输出目录</label><input id="tr-outdir" value="outputs/train/act_gui" placeholder="默认临时目录，不保存下次覆盖"></div>
       <div class="form-row"><label>（冒烟=50 步验证管线）</label><span style="flex:1;display:flex;gap:.6rem">
         <button type="submit" class="secondary">⚡ 正式训练</button>
@@ -520,6 +644,7 @@ async function trainView() {
       env_task: $("#tr-task").value, steps: steps,
       batch_size: $("#tr-batch").value, output_dir: $("#tr-outdir").value,
       chunk_size: $("#tr-chunk").value, save_freq: $("#tr-save").value,
+      eval_freq: $("#tr-eval").checked ? $("#tr-evalfreq").value : 0,
     };
     const j = await (await fetch("/api/train", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -646,21 +771,14 @@ function showVideos(project, outRoot) {
       cands = groups[Object.keys(groups).sort().pop()] || [];
     }
     gal.innerHTML = cands.length ? "" : '<p class="hint">（输出目录暂无视频，检查控制台输出）</p>';
+    const byStem = {};
     for (const v of cands) {
-      const fig = document.createElement("figure");
-      const cap = document.createElement("figcaption");
-      cap.textContent = v.path.split("/").pop();
-      if (v.path.endsWith(".mp4")) {
-        const vid = document.createElement("video");
-        vid.controls = true; vid.src = "/proj/" + encodeURIComponent(project) + "/file/" + encodeURIComponent(v.path);
-        fig.appendChild(vid);
-      } else {
-        const im = document.createElement("img");
-        im.src = "/proj/" + encodeURIComponent(project) + "/file/" + encodeURIComponent(v.path);
-        fig.appendChild(im);
-      }
-      fig.appendChild(cap);
-      gal.appendChild(fig);
+      const stem = v.path.split("/").pop().replace(/\.(mp4|gif)$/i, "");
+      (byStem[stem] = byStem[stem] || []).push(v);
+    }
+    for (const group of Object.values(byStem)) {
+      const fig = mediaFigure(project, group);
+      if (fig) gal.appendChild(fig);
     }
   });
 }
@@ -739,39 +857,62 @@ async function analysisView() {
     if (!canvas) return;
     wrap.style.display = "";
     const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#fafbfc"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const W = canvas.width, H = canvas.height, pad = 34;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#fafbfc"; ctx.fillRect(0, 0, W, H);
     const colors = ["#e8863c", "#1f77b4", "#2ca02c", "#d62728", "#9467bd", "#8c564b"];
-    let maxY = 1, n = 0;
-    const series = [];
+    // 同权重多次运行（rel 去掉尾部的 seed/序号）聚合为均值±std
+    const groups = {};
     for (const it of sel) {
       try {
         const r = await fetch(`/proj/${encodeURIComponent(it.project)}/file/${encodeURIComponent(it.rel)}`);
         const data = await r.json();
         const eps = data.episodes || [];
         const cov = eps.map((e, i) => (e.coverages ? Math.max(...e.coverages) : (e.max_coverage ?? e.max_rewards ?? 0)));
-        if (cov.length) { series.push({ name: it.rel, cov }); n = Math.max(n, cov.length); maxY = Math.max(maxY, ...cov); }
+        if (!cov.length) continue;
+        const base = it.rel.replace(/\.\.\/|metrics\.(json|txt)$/g, "").replace(/[\s_]*(seed|s|run)?[\s_]*\d+$/i, "");
+        (groups[base] = groups[base] || { runs: [] }).runs.push(cov);
       } catch (e) { /* ignore */ }
     }
-    const W = canvas.width, H = canvas.height, pad = 34;
+    let maxY = 1, n = 0;
+    const series = Object.entries(groups).map(([name, { runs }]) => {
+      const len = Math.max(...runs.map((r) => r.length));
+      n = Math.max(n, len);
+      const mean = [], std = [], cnt = [];
+      for (let i = 0; i < len; i++) {
+        const vals = runs.map((r) => r[i]).filter((v) => v != null);
+        const m = vals.reduce((a, b) => a + b, 0) / (vals.length || 1);
+        mean.push(m);
+        std.push(vals.length > 1 ? Math.sqrt(vals.reduce((a, b) => a + (b - m) * (b - m), 0) / vals.length) : 0);
+        cnt.push(vals.length);
+      }
+      maxY = Math.max(maxY, ...mean.map((m, i) => m + std[i]));
+      return { name, mean, std, cnt };
+    });
+    const x = (i) => pad + ((W - pad * 2) * i) / Math.max(1, n - 1);
+    const y = (v) => H - pad - ((H - pad * 2) * v) / maxY;
     ctx.strokeStyle = "#c3cad4"; ctx.fillStyle = "#6b7686";
     for (let g = 0; g <= 4; g++) {
-      const y = H - pad - ((H - pad * 2) * g) / 4;
-      ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
-      ctx.fillText((maxY * g / 4).toFixed(2), 4, y + 4);
+      const yy = y(maxY * g / 4);
+      ctx.beginPath(); ctx.moveTo(pad, yy); ctx.lineTo(W - pad, yy); ctx.stroke();
+      ctx.fillText((maxY * g / 4).toFixed(2), 4, yy + 4);
     }
-    ctx.fillText("step", W - pad - 24, H - 8);
+    ctx.fillText("episode →", W - pad - 52, H - 8);
     series.forEach((s, si) => {
-      ctx.strokeStyle = colors[si % colors.length]; ctx.lineWidth = 2;
+      const col = colors[si % colors.length];
+      // 阴影带（均值±std）
+      ctx.fillStyle = col + "55";
       ctx.beginPath();
-      s.cov.forEach((v, i) => {
-        const x = pad + ((W - pad * 2) * i) / Math.max(1, s.cov.length - 1);
-        const y = H - pad - ((H - pad * 2) * v) / maxY;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      });
+      s.mean.forEach((_, i) => { const xv = x(i); i === 0 ? ctx.moveTo(xv, y(s.mean[i] - s.std[i])) : ctx.lineTo(xv, y(s.mean[i] - s.std[i])); });
+      for (let i = s.mean.length - 1; i >= 0; i--) ctx.lineTo(x(i), y(s.mean[i] + s.std[i]));
+      ctx.closePath(); ctx.fill();
+      // 均值线
+      ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath();
+      s.mean.forEach((v, i) => { const xv = x(i); i === 0 ? ctx.moveTo(xv, y(v)) : ctx.lineTo(xv, y(v)); });
       ctx.stroke();
-      ctx.fillStyle = colors[si % colors.length]; ctx.font = "11px sans-serif";
-      ctx.fillText(s.name.split("/").pop(), pad + 4, 14 + si * 14);
+      ctx.fillStyle = col; ctx.font = "11px sans-serif";
+      ctx.fillText(`${s.name} (n=${s.cnt[0]})`, pad + 4, 14 + si * 14);
     });
   }
   $("#an-refresh").onclick = refresh;

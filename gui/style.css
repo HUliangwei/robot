@@ -60,6 +60,8 @@ th { background: #f7f9fc; color: var(--muted); font-weight: 600; }
 .console-actions button { padding: .2rem .65rem; font-size: .72rem; background: #eef1f6; color: #39424f; box-shadow: none; }
 .console-resize { height: 5px; cursor: ns-resize; background: var(--line); }
 .console-resize:hover { background: var(--acc); }
+.gpu { font-size: .72rem; color: #1f6f8b; background: #e7f2fa; border-radius: 999px; padding: .15rem .6rem; white-space: nowrap; font-weight: 600; }
+.gpu.gpu-hot { color: #b35f1f; background: var(--acc-soft); }
 
 /* ---- workbench ---- */
 .toolbar { display: flex; gap: .6rem; margin: .6rem 0 1rem; flex-wrap: wrap; }

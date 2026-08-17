@@ -250,6 +250,7 @@ def build_train_cmd(b):
     batch = int(b.get("batch_size") or 8)
     chunk = b.get("chunk_size")
     save_freq = b.get("save_freq")
+    eval_freq = int(b.get("eval_freq") or 0)  # >0 时训练中定期跑环境评估
     outdir = (b.get("output_dir") or "").strip() or "outputs/train/tmp"  # 默认临时目录，下次训练覆盖
     outdir = outdir.replace("\\", "/").strip("/")
     if outdir.startswith(".."):
@@ -266,10 +267,11 @@ def build_train_cmd(b):
         extra += f"--policy.chunk_size={chunk} "
     if save_freq:
         extra += f"--save_freq={save_freq} "
+    eval_args = f"--env_eval_freq={eval_freq} " if eval_freq > 0 else "--eval_steps=0 --env_eval_freq=0 "
     cmd = (f"python -m lerobot.scripts.lerobot_train {task_arg}--dataset.repo_id={dataset} {root}"
            f"--policy.type={policy} --policy.push_to_hub=false "
            f"--output_dir={outdir} --steps={steps} --batch_size={batch} "
-           f"{extra}--eval_steps=0 --env_eval_freq=0 --wandb.enable=false")
+           f"{extra}{eval_args}--wandb.enable=false")
     cwd = f"workspace/{project}"
     return cmd, project, cwd
 
@@ -456,6 +458,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(scan_datasets(), ensure_ascii=False))
         if path == "/api/models":
             return self._send(200, json.dumps(scan_models(), ensure_ascii=False))
+        if path == "/api/gpu":
+            import tempfile
+
+            info = {"ok": False}
+            tmp = os.path.join(RUNS_DIR, "gpu_smi.txt")
+            try:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
+                                    "--format=csv,noheader,nounits"], stdout=f, stderr=subprocess.DEVNULL, timeout=5)
+                line = open(tmp, encoding="utf-8").read().strip()
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 3:
+                    info = {"ok": True, "util": int(float(parts[0])), "mem_used_gb": round(int(parts[1]) / 1024, 1),
+                            "mem_total_gb": round(int(parts[2]) / 1024, 1)}
+            except Exception:
+                pass
+            return self._send(200, json.dumps(info, ensure_ascii=False))
         if path == "/api/analysis":
             return self._send(200, json.dumps(find_metrics(), ensure_ascii=False))
         if path.startswith("/ws/stream"):
@@ -590,20 +609,33 @@ class Handler(BaseHTTPRequestHandler):
                 ds = LeRobotDataset(repo, root=os.environ.get("HF_HOME", os.path.join(ROBOT, "datasets")),
                                     video_backend="torchcodec")
                 n_ep = ds.num_episodes
+                ep_index = np.asarray(ds.hf_dataset["episode_index"])
                 picks = sorted({0, n_ep // 2, n_ep - 1})
                 out_eps = []
-                actions = []
-                for idx in picks:
-                    ep = ds[idx]
-                    img = ep["observation.images.image"]
-                    arr = (img.permute(1, 2, 0).numpy() * 255).astype("uint8")
-                    small = cv2.resize(arr, (160, 160))
-                    ok, buf = cv2.imencode(".jpg", cv2.cvtColor(small, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 70])
-                    b64 = base64.b64encode(buf.tobytes()).decode() if ok else ""
-                    out_eps.append({"idx": idx, "img_b64": b64})
-                    actions.append(np.asarray(ep["action"], dtype=float))
-                # 采样动作做分布
-                acts = np.vstack(actions)
+                acts = []
+                for e in picks:
+                    start = int(np.argmax(ep_index == e))
+                    length = int(np.sum(ep_index == e))
+                    offsets = [int(round(length * f / 6)) for f in range(6)]
+                    frames_b64 = []
+                    for off in offsets:
+                        ep = ds[start + off]
+                        img = ep["observation.images.image"]
+                        arr = (img.permute(1, 2, 0).numpy() * 255).astype("uint8")
+                        small = cv2.resize(arr, (160, 160))
+                        ok, buf = cv2.imencode(".jpg", cv2.cvtColor(small, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 70])
+                        frames_b64.append(base64.b64encode(buf.tobytes()).decode() if ok else "")
+                    # 动作序列：整 episode 每维采样 ~80 点
+                    dims = int(ds[start]["action"].shape[0])
+                    seq = {f"dim{d}": [] for d in range(dims)}
+                    for f in range(80):
+                        fr = ds[start + int(round(length * f / 79))]
+                        a = np.asarray(fr["action"], dtype=float)
+                        for d in range(dims):
+                            seq[f"dim{d}"].append(round(float(a[d]), 3))
+                    out_eps.append({"idx": e, "frames": frames_b64, "length": int(length), "action_series": seq})
+                    acts.append(np.asarray(ds[start]["action"], dtype=float))
+                acts = np.vstack(acts)
                 stats = {
                     "dims": int(acts.shape[1]),
                     "mean": [round(float(x), 3) for x in acts.mean(axis=0)],
@@ -713,6 +745,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({"run_id": run_id}))
             except Exception as e:
                 return self._send(500, json.dumps({"error": str(e)}))
+        if u.path == "/api/save_report":
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            project = (body.get("project") or "").strip()
+            html = (body.get("html") or "").strip()
+            if not re.fullmatch(r"[A-Za-z0-9_\-]+", project) or not html:
+                return self._send(400, json.dumps({"error": "bad params"}))
+            out_dir = os.path.join(DOCS, "reports")
+            os.makedirs(out_dir, exist_ok=True)
+            fp = os.path.join(out_dir, f"{project}_report.html")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(html)
+            return self._send(200, json.dumps({"ok": True, "url": f"/proj/_/doc/reports/{project}_report.html"}))
         if u.path == "/api/models/import":
             ln = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(ln) or b"{}")
