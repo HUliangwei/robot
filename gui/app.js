@@ -433,11 +433,12 @@ function showVideos(project, outRoot) {
   const base = String(outRoot || "outputs").replace(/^\.\.\/|^\.\//, "");
   fetch(`/api/project_files/${encodeURIComponent(project)}`).then((r) => r.json()).then((files) => {
     let cands = files.filter((f) => f.path.startsWith(base + "/") && /\.(mp4|gif)$/.test(f.path));
-    // lerobot_eval 会写 outputs/eval/<时间戳>_<模型>/，只展示最新的那次运行
+    // lerobot_eval 会写 outputs/eval/<日期>/<时间戳>_<模型>/，只展示最新那次运行
     if (base === "outputs/eval" && cands.length) {
       const groups = {};
       for (const c of cands) {
-        const seg = c.path.split("/")[2]; // outputs/eval/<seg>/...
+        const parts = c.path.split("/");
+        const seg = parts.length > 3 ? parts[2] + "/" + parts[3] : parts[2] || "?";
         (groups[seg] = groups[seg] || []).push(c);
       }
       const newest = Object.keys(groups).sort().pop();
