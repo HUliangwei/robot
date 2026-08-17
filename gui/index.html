@@ -1,60 +1,61 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>robot · 具身学习工作台</title>
-<link rel="stylesheet" href="style.css?v=5">
+<title>robot 路 鍏疯韩瀛︿範宸ヤ綔鍙?/title>
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <header>
   <span class="brand-dot"></span>
-  <h1>🤖 robot 具身学习工作台</h1>
-  <div class="sub">LeRobot × MuJoCo · 数据集 / 模型和权重 / 训练 / 推理·仿真 / 分析 · 命令实时可视</div>
+  <h1>馃 robot 鍏疯韩瀛︿範宸ヤ綔鍙?/h1>
+  <div class="sub">LeRobot 脳 MuJoCo 路 鏁版嵁闆?/ 妯″瀷鍜屾潈閲?/ 璁粌 / 鎺ㄧ悊路浠跨湡 / 鍒嗘瀽 路 鍛戒护瀹炴椂鍙</div>
 </header>
 
 <aside id="sidebar">
-  <h3>小项目</h3>
+  <h3>灏忛」鐩?/h3>
   <ul id="project-list"></ul>
-  <p class="hint" style="padding:0 .6rem"><a href="#" id="nav-new-project" class="file-link">＋ 新建小项目</a></p>
-  <h3>工作台</h3>
+  <p class="hint" style="padding:0 .6rem"><a href="#" id="nav-new-project" class="file-link">锛?鏂板缓灏忛」鐩?/a></p>
+  <h3>宸ヤ綔鍙?/h3>
   <ul class="nav">
-    <li><a href="#" id="nav-datasets">📊 数据集</a></li>
-    <li><a href="#" id="nav-models">🧠 模型和权重</a></li>
-    <li><a href="#" id="nav-train">🎓 训练</a></li>
-    <li><a href="#" id="nav-infer">🚀 推理 · 仿真</a></li>
-    <li><a href="#" id="nav-analysis">📈 分析</a></li>
-    <li><a href="#" id="nav-report">🖼 推理报告</a></li>
+    <li><a href="#" id="nav-datasets">馃搳 鏁版嵁闆?/a></li>
+    <li><a href="#" id="nav-models">馃 妯″瀷</a></li>
+    <li><a href="#" id="nav-train">馃帗 璁粌</a></li>
+    <li><a href="#" id="nav-infer">馃殌 鎺ㄧ悊</a></li>
+    <li><a href="#" id="nav-analysis">馃搱 鍒嗘瀽</a></li>
+    <li><a href="#" id="nav-report">馃柤 鎺ㄧ悊鎶ュ憡</a></li>
   </ul>
-  <h3>全局文件</h3>
+  <h3>鍏ㄥ眬鏂囦欢</h3>
   <ul class="nav" id="global-files"></ul>
   <ul class="nav">
-    <li><a href="#" id="nav-shutdown" class="danger">⏻ 关闭服务</a></li>
+    <li><a href="#" id="nav-shutdown" class="danger">鈴?鍏抽棴鏈嶅姟</a></li>
   </ul>
 </aside>
 
 <main id="main">
   <section id="welcome">
-    <h2>欢迎 👋</h2>
-    <p>左侧「工作台」管理<strong>数据集</strong>、<strong>模型和权重</strong>、发起<strong>训练</strong>与<strong>推理·仿真</strong>、查看<strong>分析</strong>。
-       <strong>底部终端</strong>会显示每一步操作对应的完整命令与实时输出，辅助熟悉命令行。</p>
-    <p class="hint">所有操作在本地执行；网页随窗口自适应缩放。</p>
+    <h2>娆㈣繋 馃憢</h2>
+    <p>宸︿晶銆屽伐浣滃彴銆嶇鐞?strong>鏁版嵁闆?/strong>銆?strong>妯″瀷鍜屾潈閲?/strong>銆佸彂璧?strong>璁粌</strong>涓?strong>鎺ㄧ悊路浠跨湡</strong>銆佹煡鐪?strong>鍒嗘瀽</strong>銆?       <strong>搴曢儴缁堢</strong>浼氭樉绀烘瘡涓€姝ユ搷浣滃搴旂殑瀹屾暣鍛戒护涓庡疄鏃惰緭鍑猴紝杈呭姪鐔熸倝鍛戒护琛屻€?/p>
+    <p class="hint">鎵€鏈夋搷浣滃湪鏈湴鎵ц锛涚綉椤甸殢绐楀彛鑷€傚簲缂╂斁銆?/p>
   </section>
 </main>
 
 <div id="console-dock" class="closed">
+  <div class="console-resize" id="console-resize" title="鎷栧姩璋冩暣楂樺害"></div>
   <div class="console-bar">
     <span class="pulse idle" id="console-pulse"></span>
-    <span class="console-title" id="console-title">终端</span>
+    <span class="console-title" id="console-title">缁堢</span>
     <span class="console-cmd" id="console-head-cmd"></span>
     <span class="console-actions">
-      <button id="console-toggle">展开 ▴</button>
-      <button id="console-kill">停止</button>
+      <button id="console-toggle">灞曞紑 鈻?/button>
+      <button id="console-kill">鍋滄</button>
     </span>
   </div>
   <pre id="console-body"></pre>
 </div>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
+

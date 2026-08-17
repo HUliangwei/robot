@@ -58,6 +58,8 @@ th { background: #f7f9fc; color: var(--muted); font-weight: 600; }
 #console-dock.open #console-body { max-height: 42vh; }
 #console-dock.closed #console-body { max-height: 0; }
 .console-actions button { padding: .2rem .65rem; font-size: .72rem; background: #eef1f6; color: #39424f; box-shadow: none; }
+.console-resize { height: 5px; cursor: ns-resize; background: var(--line); }
+.console-resize:hover { background: var(--acc); }
 
 /* ---- workbench ---- */
 .toolbar { display: flex; gap: .6rem; margin: .6rem 0 1rem; flex-wrap: wrap; }

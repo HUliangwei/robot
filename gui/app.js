@@ -58,15 +58,33 @@ const MEDIA_EXT = ["mp4", "gif", "png", "jpg", "jpeg", "svg", "webp"];
 
 // ---------------- console dock ----------------
 const dock = () => $("#console-dock");
+let _drag = null;
 function setPulse(running) {
   const p = $("#console-pulse");
   if (p) { p.className = "pulse " + (running ? "" : "idle"); }
 }
+$("#console-resize").addEventListener("mousedown", (e) => {
+  _drag = { startY: e.clientY, startH: $("#console-body").offsetHeight };
+  e.preventDefault();
+});
+document.addEventListener("mousemove", (e) => {
+  if (!_drag) return;
+  const d = dock();
+  d.classList.add("open"); d.classList.remove("closed");
+  const h = Math.max(80, Math.min(window.innerHeight - 120, _drag.startH - (e.clientY - _drag.startY)));
+  $("#console-body").style.maxHeight = h + "px";
+  $("#console-body").style.height = h + "px";
+});
+document.addEventListener("mouseup", () => { _drag = null; });
 $("#console-toggle").onclick = () => {
   const d = dock();
   const open = d.classList.toggle("open");
   d.classList.remove("closed");
   $("#console-toggle").textContent = open ? "收起 ▾" : "展开 ▴";
+  if (open) {
+    const body = $("#console-body");
+    if (!body.style.height) body.style.maxHeight = "30vh";
+  }
 };
 $("#console-kill").onclick = async () => {
   if (currentRunId) await fetch("/api/run/" + currentRunId + "/kill", { method: "POST" });
@@ -388,8 +406,8 @@ function architectureHTML(m) {
   return `<p class="hint">模型类型 ${esc(t)} 暂无预设架构图，查看配置详情。</p>`;
 }
 async function modelsView() {
-  mainEl.innerHTML = `<h2>🧠 模型和权重</h2>
-    <div class="card"><p class="hint">按模型大类分组，每类下列出已有权重；点「架构」看带注释的结构图与超参数，「推理」填入推理表单，「删除」移除权重。</p>
+  mainEl.innerHTML = `<h2>🧠 模型</h2>
+    <div class="card"><p class="hint">按模型大类分组（默认收起），每类下列出已有权重；点「架构」看带注释的结构图与超参数，「推理」填入推理表单，「删除」移除权重。</p>
       <div class="toolbar"><button id="md-refresh">🔄 刷新</button><button id="md-import">⬇ 导入模型/权重</button></div>
       <div id="md-list"></div></div>`;
   const refresh = async () => {
@@ -404,7 +422,7 @@ async function modelsView() {
     }
     let html = "";
     for (const [g, ms] of Object.entries(groups)) {
-      html += `<details open class="grp"><summary>📦 ${esc(g)}（${ms.length}）</summary><div class="grp-inner">`;
+      html += `<details class="grp"><summary>📦 ${esc(g)}（${ms.length}）</summary><div class="grp-inner">`;
       for (const m of ms) {
         const badge = m.type === "smolvla" ? "badge-vla" : (m.type === "act" ? "badge-act" : (m.type === "vlm" ? "badge-vlm" : "badge-other"));
         html += `<div class="model-card">
@@ -520,21 +538,35 @@ async function inferView(prefillPath) {
   const envOpts = ['<option value="libero">LIBERO（Franka · MuJoCo）</option>',
     '<option value="mujoco">PushT-MuJoCo（自建）</option>',
     '<option value="official">PushT-官方（pymunk 2D）</option>'].join("");
-  mainEl.innerHTML = `<h2>🚀 推理 · 仿真</h2>
+  mainEl.innerHTML = `<h2>🚀 推理</h2>
     <div class="card"><form id="infer-form">
-      <div class="form-row"><label>仿真环境</label><select id="inf-env">${envOpts}</select></div>
+      <div class="form-row"><label>仿真环境</label><select id="inf-env">${envOpts}</select>
+        <span class="hint" id="inf-preset-hint"></span></div>
       <div class="form-row"><label>模型权重</label><select id="inf-model">${mOpts || '<option value="">（先导入模型）</option>'}</select></div>
       <div class="form-row"><label>或手填路径</label><input id="inf-path" value="${esc(prefillPath || "")}" placeholder="权重目录或 hub id" style="font-family:Consolas"></div>
       <div class="form-row"><label>局数</label><input id="inf-ep" type="number" value="3" min="1" class="mini"></div>
-      <div class="form-row"><label>LIBERO 任务</label><input id="inf-task" value="libero_spatial" style="font-family:Consolas" class="mini"><input id="inf-taskids" value="[0]" class="mini" style="width:80px"></div>
-      <div class="form-row"><label>输出目录</label><input id="inf-outdir" value="outputs/rollout_gui" placeholder="PushT 用；LIBERO 自动存 outputs/eval"></div>
-      <div class="form-row"><label>🔴 实时仿真</label><label class="hint" style="flex:1"><input type="checkbox" id="inf-live" style="width:auto;min-width:0"> 勾选后仿真过程中实时推流画面（SSE），结束后仍会生成视频</label></div>
+      <div class="form-row" id="inf-task-row"><label>LIBERO 任务</label><input id="inf-task" value="libero_spatial" style="font-family:Consolas" class="mini"><input id="inf-taskids" value="[0]" class="mini" style="width:80px"><span class="hint">task_id 范围 [0,9]；多任务如 [0,1]</span></div>
+      <div class="form-row" id="inf-outdir-row"><label>输出目录</label><input id="inf-outdir" value="outputs/rollout_gui" placeholder="PushT 用；LIBERO 自动存 outputs/eval"></div>
+      <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="inf-live" style="width:auto;min-width:0"> 推理过程中实时推流画面（结束仍生成视频）</label></div>
       <div class="form-row"><button type="submit">🚀 开始推理</button><span class="hint">控制台显示命令与实时输出</span></div>
     </form></div>
     <div class="card" id="live-card" style="display:none"><h3>🖥 实时仿真画面</h3>
       <div class="live-panel"><div class="live-frame"><img id="live-img" alt="waiting..."><p class="hint" id="live-status">等待画面…</p></div>
       <div class="live-meta" id="live-meta"></div></div></div>
     <div class="card"><h3>🎬 推理结果</h3><div class="gallery" id="inf-gallery"><p class="hint">（推理完成后显示视频）</p></div></div>`;
+  const applyEnvPreset = () => {
+    const env = $("#inf-env").value;
+    const taskRow = $("#inf-task-row"), outRow = $("#inf-outdir-row");
+    const hint = $("#inf-preset-hint");
+    if (env === "libero") {
+      taskRow.style.display = ""; outRow.style.display = "none";
+      hint.textContent = "预设：LIBERO 用 lerobot-eval 或 inference_libero（实时）";
+    } else {
+      taskRow.style.display = "none"; outRow.style.display = "";
+      hint.textContent = "预设：PushT 官方/自建 MuJoCo（run_pusht_rollout）";
+    }
+  };
+  $("#inf-env").onchange = applyEnvPreset;
   $("#inf-model").onchange = () => { $("#inf-path").value = $("#inf-model").value; };
   $("#infer-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -556,33 +588,47 @@ async function inferView(prefillPath) {
     if (j.stream_dir) startLive(j.project, j.stream_dir);
     runCmd("推理 " + body.env + " @" + body.policy_path, j.project, j.cmd, j.cwd, onDone);
   };
+  applyEnvPreset();
 }
 let _liveEs = null;
+let _liveStop = false;
 function startLive(project, sdir) {
   const card = $("#live-card");
   if (!card) return;
   card.style.display = "";
   const img = $("#live-img"), meta = $("#live-meta"), status = $("#live-status");
   if (status) status.textContent = "连接中…";
-  if (_liveEs) _liveEs.close();
-  const url = `/api/stream?project=${encodeURIComponent(project)}&dir=${encodeURIComponent(sdir)}`;
-  _liveEs = new EventSource(url);
-  _liveEs.onmessage = (e) => {
-    let d = {};
-    try { d = JSON.parse(e.data); } catch (err) { return; }
-    if (d.done) { if (status) status.textContent = "✅ 推理完成"; stopLive(false); return; }
-    if (d.img && img) { img.src = d.img; img.style.display = "block"; if (status) status.textContent = ""; }
-    if (d.info && meta) {
-      let it = {};
-      try { it = JSON.parse(d.info); } catch (err) { it = { raw: d.info }; }
-      meta.innerHTML = Object.entries(it).map(([k, v]) =>
-        `<span class="metric">${esc(k)} = ${esc(typeof v === "object" ? JSON.stringify(v) : v)}</span>`).join("");
-    }
+  if (_liveEs) { try { _liveEs.close(); } catch (e) { /* */ } _liveEs = null; }
+  _liveStop = false;
+  const url = `/ws/stream?project=${encodeURIComponent(project)}&dir=${encodeURIComponent(sdir)}`;
+  const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+  const connect = () => {
+    if (_liveStop) return;
+    let ws;
+    try { ws = new WebSocket(wsProto + "//" + location.host + url); } catch (e) { if (status) status.textContent = "WS 失败: " + e; return; }
+    _liveEs = ws;
+    ws.onmessage = (e) => {
+      let d = {};
+      try { d = JSON.parse(e.data); } catch (err) { return; }
+      if (d.done) { if (status) status.textContent = "✅ 推理完成"; stopLive(false); return; }
+      if (d.img && img) { img.src = d.img; img.style.display = "block"; if (status) status.textContent = ""; }
+      if (d.info && meta) {
+        let it = {};
+        try { it = JSON.parse(d.info); } catch (err) { it = { raw: d.info }; }
+        meta.innerHTML = Object.entries(it).map(([k, v]) =>
+          `<span class="metric">${esc(k)} = ${esc(typeof v === "object" ? JSON.stringify(v) : v)}</span>`).join("");
+      }
+    };
+    ws.onerror = () => { if (status) status.textContent = "流中断（运行结束或异常）"; };
+    ws.onclose = () => {
+      if (!_liveStop) setTimeout(connect, 800); // 自动重连
+    };
   };
-  _liveEs.onerror = () => { if (status) status.textContent = "流中断（运行结束或异常）"; };
+  connect();
 }
 function stopLive(close = true) {
-  if (_liveEs) { if (close) _liveEs.close(); _liveEs = null; }
+  _liveStop = true;
+  if (_liveEs) { try { _liveEs.close(); } catch (e) { /* */ } _liveEs = null; }
 }
 function showVideos(project, outRoot) {
   const gal = $("#inf-gallery");
@@ -622,40 +668,47 @@ function showVideos(project, outRoot) {
 // ---------------- 分析视图（模型→权重→项目 分级） ----------------
 async function analysisView() {
   mainEl.innerHTML = `<h2>📈 分析（分级：模型 → 权重 → 项目）</h2>
-    <div class="card"><p class="hint">点击模型大类展开权重，再点权重展开各项目的推理/评估结果；点「原始」看 metrics.json。metrics 是每次评估的记录（成功率/覆盖率等），不是权重文件。</p>
-      <div class="toolbar"><button id="an-refresh">🔄 刷新</button></div>
-      <div id="an-list"></div></div>`;
+    <div class="card"><p class="hint">点击模型大类展开权重，再点权重展开各项目的推理/评估结果；勾选权重可对比覆盖率曲线；点「原始」看 metrics.json。metrics 是每次评估的记录（成功率/覆盖率等），不是权重文件。</p>
+      <div class="toolbar"><button id="an-refresh">🔄 刷新</button><button id="an-chart-btn" class="secondary">📈 覆盖率曲线对比</button></div>
+      <div id="an-list"></div>
+      <div id="an-chart" style="display:none"><h3>📉 覆盖率 / 成功率曲线（勾选对比）</h3><canvas id="an-canvas" width="900" height="320" style="width:100%;border:1px solid var(--line);border-radius:12px;background:#fff"></canvas></div>
+    </div>`;
+  let checked = [];
   const refresh = async () => {
     const items = await (await fetch("/api/analysis")).json();
     const models = await (await fetch("/api/models")).json();
     const el = $("#an-list");
     if (!items.length) { el.innerHTML = '<p class="hint">（暂无 metrics 结果）</p>'; return; }
-    const nameOf = (p) => {
-      const mm = models.find((m) => p.includes(m.path.split(/[\\/]/).slice(-1)[0]));
-      return mm ? mm.name : "";
-    };
-    // 树：type -> model_name -> project/rel
+    // 权重级 = 模型名（若 metrics 路径能对上模型）否则项目名；项目级 = 具体结果路径
     const tree = {};
     for (const it of items) {
-      const rel = it.rel;
-      const mName = nameOf(rel) || it.project + "/" + rel;
-      const type = (models.find((m) => m.name === mName) || {}).type || "?";
+      const p = it.rel;
+      let mName = null;
+      for (const m of models) {
+        if (p.includes(m.path.split(/[\\/]/).slice(-1)[0]) || p.includes(m.name.replace("/", "_"))) { mName = m.name; break; }
+      }
+      const type = mName ? ((models.find((m) => m.name === mName) || {}).type || "?") : "项目产出";
+      const weight = mName || it.project;
       (tree[type] = tree[type] || {});
-      (tree[type][mName] = tree[type][mName] || []).push(it);
+      (tree[type][weight] = tree[type][weight] || []).push(it);
     }
     let html = "";
-    for (const [type, modelsG] of Object.entries(tree)) {
-      html += `<details open class="grp"><summary>🧩 ${esc(type)}</summary><div class="grp-inner">`;
-      for (const [mName, its] of Object.entries(modelsG)) {
-        html += `<details class="grp"><summary>📦 ${esc(mName)}（${its.length} 项）</summary><div class="grp-inner">`;
+    let flat = [];
+    for (const [type, wg] of Object.entries(tree)) {
+      html += `<details class="grp"><summary>🧩 ${esc(type)}</summary><div class="grp-inner">`;
+      for (const [weight, its] of Object.entries(wg)) {
+        html += `<details class="grp"><summary>📦 ${esc(weight)}（${its.length} 项）</summary><div class="grp-inner">`;
         for (const it of its) {
           const s = it.summary || {};
           const vals = Object.entries(s).filter(([k]) => k !== "raw").map(([k, v]) =>
             `<span class="metric">${esc(k)}=${esc(typeof v === "object" ? JSON.stringify(v) : v)}</span>`).join("");
-          html += `<div class="model-card"><div class="model-head"><span class="model-name">📁 ${esc(it.project)} / ${esc(it.rel)}</span></div>
+          html += `<div class="model-card" data-proj="${esc(it.project)}" data-rel="${esc(it.rel)}">
+            <div class="model-head"><label class="hint" style="margin-right:.3rem"><input type="checkbox" class="an-check"> 对比</label>
+              <span class="model-name">${esc(it.project)} / ${esc(it.rel)}</span></div>
             <div class="model-meta">${vals || "（无结构化摘要）"}</div>
             ${s.raw ? `<pre class="code">${esc(s.raw)}</pre>` : ""}
             <div class="model-actions"><button class="raw-btn">🔎 查看原始</button></div></div>`;
+          flat.push(it);
         }
         html += "</div></details>";
       }
@@ -665,14 +718,64 @@ async function analysisView() {
     el.querySelectorAll(".raw-btn").forEach((b) => {
       b.onclick = () => {
         const card = b.closest(".model-card");
-        const title = card.querySelector(".model-name").textContent.trim();
-        const rel = title.split("/").slice(1).join("/");
-        const proj = title.split("/")[0];
-        viewFile(`/proj/${encodeURIComponent(proj)}/file/${encodeURIComponent(rel)}`, rel);
+        viewFile(`/proj/${encodeURIComponent(card.dataset.proj)}/file/${encodeURIComponent(card.dataset.rel)}`, card.dataset.rel);
+      };
+    });
+    el.querySelectorAll(".an-check").forEach((cb, i) => {
+      cb.checked = checked.includes(flat[i].rel);
+      cb.onchange = () => {
+        const it = flat[i];
+        checked = cb.checked ? [...checked, it.rel] : checked.filter((x) => x !== it.rel);
+        drawCompare();
       };
     });
   };
+  async function drawCompare() {
+    const wrap = $("#an-chart");
+    if (!checked.length) { wrap.style.display = "none"; return; }
+    const items = await (await fetch("/api/analysis")).json();
+    const sel = items.filter((it) => checked.includes(it.rel));
+    const canvas = $("#an-canvas");
+    if (!canvas) return;
+    wrap.style.display = "";
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#fafbfc"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const colors = ["#e8863c", "#1f77b4", "#2ca02c", "#d62728", "#9467bd", "#8c564b"];
+    let maxY = 1, n = 0;
+    const series = [];
+    for (const it of sel) {
+      try {
+        const r = await fetch(`/proj/${encodeURIComponent(it.project)}/file/${encodeURIComponent(it.rel)}`);
+        const data = await r.json();
+        const eps = data.episodes || [];
+        const cov = eps.map((e, i) => (e.coverages ? Math.max(...e.coverages) : (e.max_coverage ?? e.max_rewards ?? 0)));
+        if (cov.length) { series.push({ name: it.rel, cov }); n = Math.max(n, cov.length); maxY = Math.max(maxY, ...cov); }
+      } catch (e) { /* ignore */ }
+    }
+    const W = canvas.width, H = canvas.height, pad = 34;
+    ctx.strokeStyle = "#c3cad4"; ctx.fillStyle = "#6b7686";
+    for (let g = 0; g <= 4; g++) {
+      const y = H - pad - ((H - pad * 2) * g) / 4;
+      ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+      ctx.fillText((maxY * g / 4).toFixed(2), 4, y + 4);
+    }
+    ctx.fillText("step", W - pad - 24, H - 8);
+    series.forEach((s, si) => {
+      ctx.strokeStyle = colors[si % colors.length]; ctx.lineWidth = 2;
+      ctx.beginPath();
+      s.cov.forEach((v, i) => {
+        const x = pad + ((W - pad * 2) * i) / Math.max(1, s.cov.length - 1);
+        const y = H - pad - ((H - pad * 2) * v) / maxY;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.fillStyle = colors[si % colors.length]; ctx.font = "11px sans-serif";
+      ctx.fillText(s.name.split("/").pop(), pad + 4, 14 + si * 14);
+    });
+  }
   $("#an-refresh").onclick = refresh;
+  $("#an-chart-btn").onclick = drawCompare;
   refresh();
 }
 

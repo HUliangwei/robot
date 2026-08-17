@@ -458,6 +458,76 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(scan_models(), ensure_ascii=False))
         if path == "/api/analysis":
             return self._send(200, json.dumps(find_metrics(), ensure_ascii=False))
+        if path.startswith("/ws/stream"):
+            import base64 as _b64
+            import glob as _glob
+            import hashlib
+            import select
+            import struct
+            import urllib.parse as _up
+
+            q = _up.parse_qs(urlparse(self.path).query)
+            project = q.get("project", [""])[0]
+            sdir = q.get("dir", [""])[0]
+            base = os.path.realpath(os.path.join(WORKSPACE, project, sdir.replace("/", os.sep)))
+            proj_root = os.path.realpath(os.path.join(WORKSPACE, project))
+            if not base.startswith(proj_root + os.sep):
+                return self._send(400, json.dumps({"error": "bad stream dir"}))
+            key = self.headers.get("Sec-WebSocket-Key", "")
+            accept = _b64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+            self.send_response(101, "Switching Protocols")
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", accept)
+            self.end_headers()
+
+            def ws_send(payload: bytes):
+                hdr = bytearray([0x81])
+                ln = len(payload)
+                if ln < 126:
+                    hdr.append(ln)
+                elif ln < 65536:
+                    hdr.append(126)
+                    hdr += ln.to_bytes(2, "big")
+                else:
+                    hdr.append(127)
+                    hdr += ln.to_bytes(8, "big")
+                self.connection.sendall(bytes(hdr) + payload)
+
+            seen = set()
+            line_count = 0
+            conn = self.connection
+            try:
+                while True:
+                    r, _, _ = select.select([conn], [], [], 0.3)
+                    if r:
+                        data = conn.recv(1)
+                        if data == b"":
+                            break  # 客户端关闭
+                    evt = None
+                    info_path = os.path.join(base, "info.jsonl")
+                    if os.path.exists(info_path):
+                        with open(info_path, encoding="utf-8", errors="replace") as f:
+                            lines = f.readlines()
+                        if len(lines) > line_count:
+                            line_count = len(lines)
+                            evt = {"info": lines[-1].strip()}
+                    frames = sorted(_glob.glob(os.path.join(base, "frame_*.png")))
+                    if frames:
+                        latest = os.path.basename(frames[-1])
+                        if latest not in seen:
+                            seen.add(latest)
+                            evt = {"img": f"/proj/{project}/file/{sdir}/{latest}",
+                                   "info": evt.get("info") if evt else None}
+                    if evt:
+                        ws_send(json.dumps(evt, ensure_ascii=False).encode("utf-8"))
+                    if os.path.exists(os.path.join(base, "DONE")):
+                        ws_send(b'{"done": true}')
+                        break
+                    time.sleep(0.1)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            return
         if path.startswith("/api/stream"):
             import glob as _glob
             import urllib.parse as _up

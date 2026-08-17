@@ -54,21 +54,42 @@ def load_policy(policy_path: str):
     return policy, pre, post, ptype
 
 
+def _quat2axisangle(q):
+    """(B,4) quat (x,y,z,w) -> (B,3) axis-angle，与 lerobot LiberoProcessorStep 一致。"""
+    q = q.float()
+    w = q[:, 3].clamp(-1.0, 1.0)
+    den = torch.sqrt(torch.clamp(1.0 - w * w, min=0.0))
+    result = torch.zeros((q.shape[0], 3), device=q.device, dtype=torch.float32)
+    mask = den > 1e-10
+    if mask.any():
+        angle = 2.0 * torch.acos(w[mask])
+        axis = q[mask, :3] / den[mask].unsqueeze(1)
+        result[mask] = axis * angle.unsqueeze(1)
+    return result
+
+
 def obs_to_batch(obs, instruction: str | None, ptype: str):
-    """env obs (SyncVectorEnv, n=1) -> policy batch."""
-    img = obs["pixels"]["image"][0]  # (H,W,3) uint8
-    t = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
-    batch = {"observation.images.image": t.unsqueeze(0)}
+    """env obs (SyncVectorEnv, n=1) -> policy batch（复刻 LiberoProcessorStep）。"""
+    img = torch.from_numpy(obs["pixels"]["image"][0]).permute(2, 0, 1).float() / 255.0
+    batch = {"observation.images.image": img.unsqueeze(0)}
     if "image2" in obs["pixels"]:
-        img2 = obs["pixels"]["image2"][0]
-        batch["observation.images.image2"] = torch.from_numpy(img2).permute(2, 0, 1).float().unsqueeze(0) / 255.0
-    state = obs.get("robot_state")
-    if state is not None:
-        # robot_state: {"eef": {pos,quat,mat}, "gripper": {qpos,qvel}, "joints": {pos,vel}}
-        joints = state["joints"]["pos"][0]
-        gripper = state["gripper"]["qpos"][0]
-        batch["observation.state"] = torch.cat([torch.from_numpy(joints).float(), torch.from_numpy(gripper).float()]).unsqueeze(0)
+        img2 = torch.from_numpy(obs["pixels"]["image2"][0]).permute(2, 0, 1).float().unsqueeze(0) / 255.0
+        batch["observation.images.image2"] = img2
+    rs = obs.get("robot_state")
+    if rs is not None:
+        # LIBERO state = eef_pos(3) + 轴角(3) + gripper_qpos(2) = 8 维（lerobot LiberoProcessorStep）
+        eef_pos = torch.from_numpy(rs["eef"]["pos"][0]).float()
+        eef_quat = torch.from_numpy(rs["eef"]["quat"][0]).float().unsqueeze(0)
+        gripper = torch.from_numpy(rs["gripper"]["qpos"][0]).float()
+        state = torch.cat([eef_pos, _quat2axisangle(eef_quat)[0], gripper])
+        batch["observation.state"] = state.unsqueeze(0)
+    # HuggingFaceVLA 相机约定：图像翻转 180°（LiberoProcessorStep 对 H,W flip）
+    for k in list(batch.keys()):
+        if k.startswith("observation.images."):
+            batch[k] = torch.flip(batch[k], dims=[2, 3])
     if ptype == "smolvla":
+        # SmolVLA 的 tokenizer 预处理读取 batch["task"]（lerobot TokenizerProcessor.task_key="task"）
+        batch["task"] = [instruction or "do the task"]
         batch["observation.language_instruction"] = [instruction or "do the task"]
     return batch
 
@@ -110,11 +131,17 @@ def main():
     from lerobot.envs.libero import create_libero_envs  # noqa: PLC0415
 
     envs = create_libero_envs(
-        args.task, n_envs=1, env_cls=gym.vector.SyncVectorEnv, gym_kwargs={"task_ids": [args.task_id]},
+        args.task, n_envs=1, env_cls=gym.vector.SyncVectorEnv,
+        gym_kwargs={"task_ids": [args.task_id], "obs_type": "pixels_agent_pos"},  # SmolVLA 需要 observation.state
     )
     env = envs[args.task][args.task_id]
-    instruction = getattr(env, "task_description", None)
-    print("task:", getattr(env, "task", args.task), "| instruction:", instruction)
+    # 语言指令：SyncVectorEnv 包装层不暴露 task_description，直接从套件任务对象取
+    from lerobot.envs.libero import _get_suite  # noqa: PLC0415
+
+    suite = _get_suite(args.task)
+    task_obj = suite.get_task(args.task_id)
+    instruction = getattr(task_obj, "language", None) or getattr(env, "task_description", None)
+    print("task:", getattr(task_obj, "name", args.task), "| instruction:", instruction)
 
     results = []
     t0 = time.time()
