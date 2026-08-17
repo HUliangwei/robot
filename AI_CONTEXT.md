@@ -53,13 +53,14 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 - 文档/可视化/GitHub 推送 ✅
 - 小项目 README（个人网站展示用）+ PROGRESS（含残余问题记录）✅
 
-**小项目 2：LIBERO（workspace/libero/）— 全链路已验证，预训练权重推理中** 🚀
+**小项目 2：LIBERO（workspace/libero/）— 全链路打通，SmolVLA 评估 80% 成功** 🎉
 - 骨架（README/PROGRESS/commands/verify_env.py/setup_windows_patches.py）✅
 - **环境验证通过**（exit 0）；**数据集 `lerobot/libero` 下载完成**（1.9GB，1693 episodes/273465 帧/双相机 256²/action[7]∈[-1,1]，**HF 需走代理** `HTTP_PROXY=127.0.0.1:7897`）
 - **训练冒烟通过**（50 步 4.6 step/s）；**评估冒烟通过**（1 局 33.7s）
-- **Windows 关键坑**：① 评估必须 `--env.max_parallel_tasks=1 --eval.use_async_envs=false`（AsyncVectorEnv 会挂起）② `~/.libero/config.yaml` 需预建（否则交互式提问导致 EOF）③ robosuite 补丁见 setup_windows_patches.py
-- **预训练权重**（用户选择先跑官方/社区权重，不训练）：`ishandotsh/act_libero_spatial_test`（ACT 207MB）+ `HuggingFaceVLA/smolvla_libero`（官方 SmolVLA 1.2GB，VLA 学习目标），评估中
-- 学习 Notebook：`notebooks/01_LIBERO_环境与数据学习.ipynb`；推理脚本：`inference_libero.py`（ACT/SmolVLA 通用）
+- **官方 SmolVLA 评估：LIBERO-Spatial task0 成功率 80%（4/5）**——VLA 闭环验证成功，视频在 `outputs/eval_smolvla_spatial_t0/`
+- 社区 ACT（test 仓库）0/10、0/1（弱权重）；libero_10 评估挂起待排查
+- **Windows 关键坑**：① 评估必须 `--env.max_parallel_tasks=1 --eval.use_async_envs=false`（AsyncVectorEnv 会挂起）② `~/.libero/config.yaml` 需预建 ③ robosuite 补丁见 setup_windows_patches.py ④ SmolVLA 推理 ~1.4s/步（慢但正常）⑤ 大模型下载用 hf-mirror（36MB/s）+ 注入 HF 缓存（snapshot 目录）
+- 学习 Notebook：`notebooks/01_LIBERO_环境与数据学习.ipynb`（8 节）；推理脚本：`inference_libero.py`
 
 **结构整理**：删除空目录（notes/datasets/examples/models/.vscode）、陈旧 rollout（rollout_mujoco/rollout_official*/lemon/smoke）、顶层 outputs/my_rollout；保留证据视频与权重。
 **GUI 升级**：新增「全部文件」浏览（项目内所有文件可查看：md/ipynb/代码/媒体）+ 全局 README/笔记/文档导航；修复 AI_CONTEXT 导航链接（原路径 404）。
