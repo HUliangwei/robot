@@ -73,6 +73,24 @@ def obs_to_batch(obs, instruction: str | None, ptype: str):
     return batch
 
 
+def _stream_write(stream_dir, step, frame, info):
+    """实时可视化：帧 + 状态写入 stream 目录（GUI SSE 推送）。"""
+    import os
+
+    os.makedirs(stream_dir, exist_ok=True)
+    if frame is not None:
+        h, w = frame.shape[:2]
+        small = cv2.resize(frame, (256, int(256 * h / w))) if w > 256 else frame
+        cv2.imwrite(os.path.join(stream_dir, f"frame_{step:05d}.png"), cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
+    rew = float(info.get("reward", 0))
+    if hasattr(rew, "all"):
+        rew = float(rew.sum())
+    line = {"step": step, "reward": rew,
+            "success": bool(info.get("success", False) if not hasattr(info.get("success", False), "all") else info["success"].all())}
+    with open(os.path.join(stream_dir, "info.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--policy-path", required=True)
@@ -82,6 +100,7 @@ def main():
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--max-steps", type=int, default=500)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--stream-dir", default=None, help="实时可视化目录：每 3 步写一帧 PNG + info.jsonl")
     args = ap.parse_args()
 
     policy, pre, post, ptype = load_policy(args.policy_path)
@@ -114,7 +133,10 @@ def main():
             if done:
                 success = bool(info["success"].all() if hasattr(info.get("success"), "all") else info.get("success", False))
             if step % 3 == 0 or done or step == 0:
-                frames.append(obs["pixels"]["image"][0])
+                frame = obs["pixels"]["image"][0]
+                frames.append(frame)
+                if args.stream_dir:
+                    _stream_write(args.stream_dir, step, frame, info)
             step += 1
         success = bool(info.get("success", False))
         results.append({"episode": ep, "steps": step, "success": success})
@@ -125,6 +147,11 @@ def main():
             writer.write(cv2.cvtColor(f, cv2.COLOR_RGB2BGR))
         writer.release()
         print(f"ep {ep}: steps={step} success={success} -> {path}")
+
+    if args.stream_dir:
+        os.makedirs(args.stream_dir, exist_ok=True)
+        open(os.path.join(args.stream_dir, "DONE"), "w").close()
+        print(f"stream done -> {args.stream_dir}")
 
     summary = {
         "policy": args.policy_path, "task": args.task, "task_id": args.task_id,

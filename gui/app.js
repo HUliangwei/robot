@@ -189,12 +189,13 @@ async function openProject(name) {
   document.querySelectorAll("#project-list li").forEach((li) => li.classList.remove("active"));
   const r = await fetch("/api/project/" + encodeURIComponent(name));
   const data = await r.json();
-  mainEl.innerHTML = `<h2>📁 ${name}</h2>
+  mainEl.innerHTML = `<h2>📁 ${name} <button class="secondary" id="rep-btn" style="margin-left:.6rem;vertical-align:middle">📊 项目报告</button></h2>
     <div class="card" id="readme-view"></div>
     <div class="card" id="progress-view">${md(data.progress || "（无 PROGRESS.md）")}</div>
     <div class="card"><h3>⚡ 常用命令</h3><div id="commands"></div></div>
     <div class="card"><h3>🎬 产出（视频 / 图表）</h3><div class="gallery" id="gallery"></div></div>
     <div class="card"><h3>📂 全部文件</h3><div id="files"></div></div>`;
+  $("#rep-btn").onclick = () => projectReport(name);
   const rm = await fetch("/proj/" + encodeURIComponent(name) + "/file/README.md");
   if (rm.ok) {
     const rmd = await rm.text();
@@ -244,6 +245,33 @@ async function openProject(name) {
   }
 }
 
+// ---------------- 项目报告 ----------------
+async function projectReport(name) {
+  const rm = await (await fetch("/proj/" + encodeURIComponent(name) + "/file/README.md"));
+  const readme = rm.ok ? await rm.text() : "（无 README）";
+  const an = await (await fetch("/api/analysis")).json();
+  const mine = an.filter((it) => it.project === name);
+  const rows = mine.map((it) => {
+    const s = it.summary || {};
+    const key = ["success_rate", "pc_success", "mean_max_coverage", "mean_sum_reward", "n_episodes", "ep0_max_coverage"]
+      .filter((k) => k in s).map((k) => `${esc(k)}=${esc(s[k])}`).join(" · ");
+    return `<tr><td class="small">${esc(it.rel)}</td><td>${key || "（无结构化摘要）"}</td>
+      <td><a class="file-link" href="#" data-url="/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(it.rel)}" data-name="${esc(it.rel)}">打开</a></td></tr>`;
+  }).join("");
+  const files = await (await fetch("/api/project_files/" + encodeURIComponent(name))).json();
+  const vids = files.filter((f) => /\.(mp4|gif)$/.test(f.path)).slice(0, 6)
+    .map((v) => `<figure><video controls src="/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(v.path)}" style="width:100%;max-height:180px;border-radius:10px;background:#0f1520"></video><figcaption class="hint">${esc(v.path.split("/").pop())}</figcaption></figure>`).join("");
+  mainEl.innerHTML = `<h2>📊 项目报告 · ${esc(name)} <button class="secondary" onclick="window.print()">🖨 打印/导出 PDF</button> <button class="secondary" id="rep-back">← 返回项目</button></h2>
+    <div class="card"><h3>📖 项目介绍</h3><div id="rep-readme">${md(readme)}</div></div>
+    <div class="card"><h3>📈 评估/推理指标（${mine.length} 项）</h3>
+      <table><thead><tr><th>结果文件</th><th>摘要</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">（暂无）</td></tr>'}</tbody></table></div>
+    <div class="card"><h3>🎬 推理视频（最新 6 个）</h3><div class="gallery">${vids || '<p class="hint">（暂无）</p>'}</div></div>`;
+  $("#rep-back").onclick = () => openProject(name);
+  mainEl.querySelectorAll(".file-link").forEach((el) => {
+    el.onclick = (e) => { e.preventDefault(); viewFile(el.dataset.url, el.dataset.name); };
+  });
+}
+
 // ---------------- 数据集视图 ----------------
 async function datasetsView() {
   mainEl.innerHTML = `<h2>📊 数据集</h2>
@@ -290,8 +318,48 @@ async function datasetDetail(repo) {
   el.innerHTML = `<details open class="grp"><summary>🔎 ${esc(repo)} 详情</summary><div class="grp-inner">
     <h3>meta/info.json</h3><table>${infoRows || '<tr><td colspan="2">（无）</td></tr>'}</table>
     ${Object.keys(stats).length ? `<h3>meta/stats.json（特征统计）</h3><pre class="code">${esc(JSON.stringify(stats, null, 2))}</pre>` : ""}
-    <p class="hint">审查要点：① episodes/帧数是否充足；② 特征是否含 image/state/action/language_instruction；③ 动作范围与状态维度是否与策略配置一致；④ 用「查看数据集信息」命令（lerobot-info）看逐 episode 明细。</p>
+    <div class="toolbar"><button id="pv-btn">🔍 数据预览（加载样本帧 + 动作分布）</button></div>
+    <div id="pv-out"><p class="hint">点击按钮加载：取 3 个 episode 的首帧 + 动作分布（首次加载数据集约需 10-30 秒）</p></div>
+    <p class="hint">审查要点：① episodes/帧数是否充足；② 特征是否含 image/state/action/language_instruction；③ 动作范围与状态维度是否与策略配置一致；④ 预览帧确认画面内容正确。</p>
   </div></details>`;
+  $("#pv-btn").onclick = async () => {
+    const out = $("#pv-out");
+    out.innerHTML = '<p class="hint">加载数据集并采样…（首次约 10-30 秒）</p>';
+    const r = await fetch("/api/dataset_preview?repo_id=" + encodeURIComponent(repo));
+    const j = await r.json();
+    if (j.error) { out.innerHTML = `<p class="hint">失败: ${esc(j.error)}</p>`; return; }
+    const th = j.episodes.map((e) => `<figure style="margin:.3rem"><img src="data:image/jpeg;base64,${e.img_b64}" style="width:120px;border-radius:10px;border:1px solid var(--line)"><figcaption class="hint" style="text-align:center">ep ${e.idx}</figcaption></figure>`).join("");
+    const st = j.action_stats;
+    out.innerHTML = `<div style="display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-start">
+      <div><h4 style="margin:.3rem 0">样本帧（ep 0 / 中 / 末）</h4><div style="display:flex;gap:.5rem">${th}</div></div>
+      <div style="flex:1;min-width:280px"><h4 style="margin:.3rem 0">动作分布（${st.dims} 维，dim0 采样）</h4>
+        <canvas id="pv-canvas" width="300" height="140" style="border:1px solid var(--line);border-radius:10px;background:#fafbfc"></canvas>
+        <p class="hint">mean=${st.mean.join(",")} · std=${st.std.join(",")} · range=[${st.min.join(",")}]~[${st.max.join(",")}]</p></div>
+    </div>`;
+    drawHist($("#pv-canvas"), st.sample_dim0);
+  };
+}
+function drawHist(canvas, data) {
+  if (!canvas || !data || !data.length) return;
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width, h = canvas.height, pad = 6;
+  const min = Math.min(...data), max = Math.max(...data);
+  const bins = 24;
+  const counts = new Array(bins).fill(0);
+  data.forEach((v) => {
+    const b = Math.min(bins - 1, Math.max(0, Math.floor(((v - min) / (max - min || 1)) * bins)));
+    counts[b]++;
+  });
+  const cmax = Math.max(...counts, 1);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#e8863c";
+  counts.forEach((c, i) => {
+    const bw = (w - pad * 2) / bins;
+    const bh = (c / cmax) * (h - pad * 2);
+    ctx.fillRect(pad + i * bw, h - pad - bh, bw - 1, bh);
+  });
+  ctx.strokeStyle = "#c3cad4";
+  ctx.beginPath(); ctx.moveTo(pad, h - pad); ctx.lineTo(w - pad, h - pad); ctx.stroke();
 }
 
 // ---------------- 模型和权重视图 ----------------
@@ -460,8 +528,12 @@ async function inferView(prefillPath) {
       <div class="form-row"><label>局数</label><input id="inf-ep" type="number" value="3" min="1" class="mini"></div>
       <div class="form-row"><label>LIBERO 任务</label><input id="inf-task" value="libero_spatial" style="font-family:Consolas" class="mini"><input id="inf-taskids" value="[0]" class="mini" style="width:80px"></div>
       <div class="form-row"><label>输出目录</label><input id="inf-outdir" value="outputs/rollout_gui" placeholder="PushT 用；LIBERO 自动存 outputs/eval"></div>
-      <div class="form-row"><button type="submit">🚀 开始推理</button><span class="hint">控制台显示命令与实时输出；完成后自动展示视频</span></div>
+      <div class="form-row"><label>🔴 实时仿真</label><label class="hint" style="flex:1"><input type="checkbox" id="inf-live" style="width:auto;min-width:0"> 勾选后仿真过程中实时推流画面（SSE），结束后仍会生成视频</label></div>
+      <div class="form-row"><button type="submit">🚀 开始推理</button><span class="hint">控制台显示命令与实时输出</span></div>
     </form></div>
+    <div class="card" id="live-card" style="display:none"><h3>🖥 实时仿真画面</h3>
+      <div class="live-panel"><div class="live-frame"><img id="live-img" alt="waiting..."><p class="hint" id="live-status">等待画面…</p></div>
+      <div class="live-meta" id="live-meta"></div></div></div>
     <div class="card"><h3>🎬 推理结果</h3><div class="gallery" id="inf-gallery"><p class="hint">（推理完成后显示视频）</p></div></div>`;
   $("#inf-model").onchange = () => { $("#inf-path").value = $("#inf-model").value; };
   $("#infer-form").onsubmit = async (e) => {
@@ -470,15 +542,47 @@ async function inferView(prefillPath) {
       env: $("#inf-env").value, policy_path: $("#inf-path").value || $("#inf-model").value,
       episodes: $("#inf-ep").value, task: $("#inf-task").value,
       task_ids: $("#inf-taskids").value, outdir: $("#inf-outdir").value,
+      stream: $("#inf-live").checked,
     };
     if (!body.policy_path) { alert("请选择或填写模型权重路径"); return; }
     const j = await (await fetch("/api/infer", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     })).json();
     if (j.error) { alert("失败: " + j.error); return; }
-    runCmd("推理 " + body.env + " @" + body.policy_path, j.project, j.cmd, j.cwd,
-      () => showVideos(j.project, j.out_root || "outputs"));
+    const onDone = () => {
+      stopLive();
+      showVideos(j.project, j.out_root || "outputs");
+    };
+    if (j.stream_dir) startLive(j.project, j.stream_dir);
+    runCmd("推理 " + body.env + " @" + body.policy_path, j.project, j.cmd, j.cwd, onDone);
   };
+}
+let _liveEs = null;
+function startLive(project, sdir) {
+  const card = $("#live-card");
+  if (!card) return;
+  card.style.display = "";
+  const img = $("#live-img"), meta = $("#live-meta"), status = $("#live-status");
+  if (status) status.textContent = "连接中…";
+  if (_liveEs) _liveEs.close();
+  const url = `/api/stream?project=${encodeURIComponent(project)}&dir=${encodeURIComponent(sdir)}`;
+  _liveEs = new EventSource(url);
+  _liveEs.onmessage = (e) => {
+    let d = {};
+    try { d = JSON.parse(e.data); } catch (err) { return; }
+    if (d.done) { if (status) status.textContent = "✅ 推理完成"; stopLive(false); return; }
+    if (d.img && img) { img.src = d.img; img.style.display = "block"; if (status) status.textContent = ""; }
+    if (d.info && meta) {
+      let it = {};
+      try { it = JSON.parse(d.info); } catch (err) { it = { raw: d.info }; }
+      meta.innerHTML = Object.entries(it).map(([k, v]) =>
+        `<span class="metric">${esc(k)} = ${esc(typeof v === "object" ? JSON.stringify(v) : v)}</span>`).join("");
+    }
+  };
+  _liveEs.onerror = () => { if (status) status.textContent = "流中断（运行结束或异常）"; };
+}
+function stopLive(close = true) {
+  if (_liveEs) { if (close) _liveEs.close(); _liveEs = null; }
 }
 function showVideos(project, outRoot) {
   const gal = $("#inf-gallery");

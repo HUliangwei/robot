@@ -284,26 +284,36 @@ def build_infer_cmd(b):
     env_kind = (b.get("env") or "libero").strip()
     policy = (b.get("policy_path") or "").strip().replace("\\", "/")  # shlex 会吃反斜杠，统一正斜杠
     episodes = int(b.get("episodes") or 3)
+    stream = bool(b.get("stream"))
     outdir = (b.get("outdir") or "").strip() or "outputs/rollout_gui"
     outdir = outdir.replace("\\", "/").strip("/")
     if outdir.startswith(".."):
         raise ValueError("输出目录必须是项目内相对路径（不允许 ..）")
+    stream_dir = f"outputs/stream/{int(time.time() * 1000)}"
     if env_kind in ("official", "mujoco"):
         project = "embodied_learning"
         cwd = "workspace/embodied_learning/mujoco_basics/pusht"
         cmd = (f"python run_pusht_rollout.py --env {env_kind} --n_episodes {episodes} "
                f"--policy-path {policy} --outdir ../../{outdir}")
+        if stream:
+            cmd += f" --stream-dir ../../{stream_dir}"
         out_root = outdir
     else:  # libero
         project = "libero"
         cwd = "workspace/libero"
         task = (b.get("task") or "libero_spatial").strip()
-        task_id = b.get("task_ids") or "[0]"
-        cmd = (f"python -m lerobot.scripts.lerobot_eval --env.type=libero --env.task={task} "
-               f"--env.task_ids={task_id} --env.max_parallel_tasks=1 --eval.use_async_envs=false "
-               f"--eval.batch_size=1 --policy.path={policy} --eval.n_episodes={episodes}")
-        out_root = "outputs/eval"  # lerobot_eval 固定输出（含时间戳子目录）
-    return cmd, project, cwd, out_root
+        task_id = (b.get("task_ids") or "[0]").strip().strip("[]") or "0"
+        if stream:
+            # 实时模式：用自写推理脚本（lerobot_eval 不支持帧回调）
+            cmd = (f"python inference_libero.py --policy-path {policy} --task {task} --task-id {task_id} "
+                   f"--n-episodes {episodes} --outdir {outdir} --stream-dir {stream_dir}")
+            out_root = outdir
+        else:
+            cmd = (f"python -m lerobot.scripts.lerobot_eval --env.type=libero --env.task={task} "
+                   f"--env.task_ids=[{task_id}] --env.max_parallel_tasks=1 --eval.use_async_envs=false "
+                   f"--eval.batch_size=1 --policy.path={policy} --eval.n_episodes={episodes}")
+            out_root = "outputs/eval"  # lerobot_eval 固定输出（含时间戳子目录）
+    return cmd, project, cwd, out_root, (stream_dir if stream else None)
 
 
 def find_projects():
@@ -372,6 +382,9 @@ def start_run(proj_name, cmd, cwd):
     env.setdefault("HF_HUB_CACHE", os.path.join(hf_home, "hub"))
     # python stdout 重定向到文件时默认块缓冲，导致 GUI 轮询读不到实时输出 -> 强制无缓冲
     env.setdefault("PYTHONUNBUFFERED", "1")
+    # 子进程默认按 GBK 写文件导致 UTF-8 读取乱码 -> 强制 UTF-8
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("PYTHONUTF8", "1")
     with open(log, "w", encoding="utf-8") as lf:
         proc = subprocess.Popen(full, cwd=resolved_cwd, stdout=lf, stderr=subprocess.STDOUT, env=env)
     with run_lock:
@@ -445,6 +458,94 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(scan_models(), ensure_ascii=False))
         if path == "/api/analysis":
             return self._send(200, json.dumps(find_metrics(), ensure_ascii=False))
+        if path.startswith("/api/stream"):
+            import glob as _glob
+            import urllib.parse as _up
+
+            q = _up.parse_qs(urlparse(self.path).query)
+            project = q.get("project", [""])[0]
+            sdir = q.get("dir", [""])[0]
+            base = os.path.realpath(os.path.join(WORKSPACE, project, sdir.replace("/", os.sep)))
+            proj_root = os.path.realpath(os.path.join(WORKSPACE, project))
+            if not base.startswith(proj_root + os.sep):
+                return self._send(400, json.dumps({"error": "bad stream dir"}))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            seen = set()
+            line_count = 0
+            try:
+                while True:
+                    evt = None
+                    info_path = os.path.join(base, "info.jsonl")
+                    if os.path.exists(info_path):
+                        with open(info_path, encoding="utf-8", errors="replace") as f:
+                            lines = f.readlines()
+                        if len(lines) > line_count:
+                            line_count = len(lines)
+                            evt = {"info": lines[-1].strip()}
+                    frames = sorted(_glob.glob(os.path.join(base, "frame_*.png")))
+                    if frames:
+                        latest = os.path.basename(frames[-1])
+                        if latest not in seen:
+                            seen.add(latest)
+                            evt = {"img": f"/proj/{project}/file/{sdir}/{latest}",
+                                   "info": evt.get("info") if evt else None}
+                    if evt:
+                        self.wfile.write(f"data: {json.dumps(evt, ensure_ascii=False)}\n\n".encode("utf-8"))
+                        self.wfile.flush()
+                    if os.path.exists(os.path.join(base, "DONE")):
+                        self.wfile.write(b'data: {"done": true}\n\n')
+                        self.wfile.flush()
+                        break
+                    time.sleep(0.4)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+            return
+        if path.startswith("/api/dataset_preview"):
+            import base64
+            import io
+            import urllib.parse as _up
+
+            q = _up.parse_qs(urlparse(self.path).query)
+            repo = q.get("repo_id", [""])[0]
+            try:
+                import numpy as np
+                import cv2
+
+                from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+                ds = LeRobotDataset(repo, root=os.environ.get("HF_HOME", os.path.join(ROBOT, "datasets")),
+                                    video_backend="torchcodec")
+                n_ep = ds.num_episodes
+                picks = sorted({0, n_ep // 2, n_ep - 1})
+                out_eps = []
+                actions = []
+                for idx in picks:
+                    ep = ds[idx]
+                    img = ep["observation.images.image"]
+                    arr = (img.permute(1, 2, 0).numpy() * 255).astype("uint8")
+                    small = cv2.resize(arr, (160, 160))
+                    ok, buf = cv2.imencode(".jpg", cv2.cvtColor(small, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    b64 = base64.b64encode(buf.tobytes()).decode() if ok else ""
+                    out_eps.append({"idx": idx, "img_b64": b64})
+                    actions.append(np.asarray(ep["action"], dtype=float))
+                # 采样动作做分布
+                acts = np.vstack(actions)
+                stats = {
+                    "dims": int(acts.shape[1]),
+                    "mean": [round(float(x), 3) for x in acts.mean(axis=0)],
+                    "std": [round(float(x), 3) for x in acts.std(axis=0)],
+                    "min": [round(float(x), 3) for x in acts.min(axis=0)],
+                    "max": [round(float(x), 3) for x in acts.max(axis=0)],
+                    "sample_dim0": [round(float(x), 3) for x in acts[:, 0][:: max(1, len(acts) // 120)]],
+                }
+                return self._send(200, json.dumps({"repo_id": repo, "n_episodes": n_ep,
+                                                   "episodes": out_eps, "action_stats": stats}, ensure_ascii=False))
+            except Exception as e:
+                return self._send(500, json.dumps({"error": str(e)[:200]}))
         if path.startswith("/api/dataset_detail"):
             q = urlparse(self.path).query
             import urllib.parse
@@ -628,9 +729,10 @@ class Handler(BaseHTTPRequestHandler):
             ln = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(ln) or b"{}")
             try:
-                cmd, proj, cwd, out_root = build_infer_cmd(body)
+                cmd, proj, cwd, out_root, stream_dir = build_infer_cmd(body)
                 run_id = start_run(proj, cmd, cwd)
-                return self._send(200, json.dumps({"run_id": run_id, "project": proj, "cmd": cmd, "cwd": cwd, "out_root": out_root}))
+                return self._send(200, json.dumps({"run_id": run_id, "project": proj, "cmd": cmd, "cwd": cwd,
+                                                   "out_root": out_root, "stream_dir": stream_dir}))
             except Exception as e:
                 return self._send(400, json.dumps({"error": str(e)}))
         if u.path.startswith("/api/run/"):

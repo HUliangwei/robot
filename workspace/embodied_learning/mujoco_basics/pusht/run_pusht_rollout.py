@@ -110,7 +110,29 @@ def make_env(env_type: str, seed: int):
         raise ValueError(env_type)
 
 
-def run_episode(env, obs, policy, preprocessor, postprocessor, max_steps=300, video_fps=10):
+def _stream_write(stream_dir, step, frame, info):
+    """实时可视化：把渲染帧 + 状态写入 stream 目录（SSE 由 GUI 服务器推送）。"""
+    import json as _json
+
+    os.makedirs(stream_dir, exist_ok=True)
+    if frame is not None:
+        h, w = frame.shape[:2]
+        small = cv2.resize(frame, (256, int(256 * h / w))) if w > 256 else frame
+        cv2.imwrite(os.path.join(stream_dir, f"frame_{step:05d}.png"), cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
+    line = {
+        "step": step,
+        "coverage": float(info.get("coverage", 0.0)),
+        "agent_pos": [round(float(x), 1) for x in info.get("pos_agent", [0, 0])]
+        if "pos_agent" in info else None,
+        "block_pose": [round(float(x), 1) for x in info.get("block_pose", [0, 0, 0])]
+        if "block_pose" in info else None,
+        "success": bool(info.get("is_success", False)),
+    }
+    with open(os.path.join(stream_dir, "info.jsonl"), "a", encoding="utf-8") as f:
+        f.write(_json.dumps(line, ensure_ascii=False) + "\n")
+
+
+def run_episode(env, obs, policy, preprocessor, postprocessor, max_steps=300, video_fps=10, stream_dir=None):
     frames = []
     rewards = []
     coverages = []
@@ -132,7 +154,10 @@ def run_episode(env, obs, policy, preprocessor, postprocessor, max_steps=300, vi
         done = bool(terminated or truncated)
         step += 1
         if step % 3 == 0 or done or step == 1:
-            frames.append(env.render())
+            frame = env.render()
+            frames.append(frame)
+            if stream_dir:
+                _stream_write(stream_dir, step, frame, info)
     success = bool(coverages and coverages[-1] > 0.95)
     return {
         "steps": step,
@@ -173,6 +198,7 @@ def main():
     ap.add_argument("--max_steps", type=int, default=300)
     ap.add_argument("--policy-path", default=MODEL_ID)
     ap.add_argument("--temporal-ensemble", action="store_true")
+    ap.add_argument("--stream-dir", default=None, help="实时可视化目录：每 3 步写一帧 PNG + info.jsonl")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -183,7 +209,8 @@ def main():
     t0 = time.time()
     for ep in range(args.n_episodes):
         env, obs = make_env(args.env, seed=args.seed + ep)
-        res = run_episode(env, obs, policy, preprocessor, postprocessor, max_steps=args.max_steps)
+        res = run_episode(env, obs, policy, preprocessor, postprocessor, max_steps=args.max_steps,
+                          stream_dir=args.stream_dir)
         res["episode"] = ep
         results.append({k: v for k, v in res.items() if k != "frames"})
         vid_path = os.path.join(args.outdir, f"episode_{ep:02d}.mp4")
@@ -194,6 +221,10 @@ def main():
             f"-> {vid_path}"
         )
         env.close()
+    if args.stream_dir:
+        os.makedirs(args.stream_dir, exist_ok=True)
+        open(os.path.join(args.stream_dir, "DONE"), "w").close()
+        print(f"stream done -> {args.stream_dir}")
 
     summary = {
         "env": args.env,
