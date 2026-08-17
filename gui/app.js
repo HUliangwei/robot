@@ -656,42 +656,66 @@ async function trainView() {
   $("#tr-smoke").onclick = () => run(50);
 }
 
-// ---------------- 推理 · 仿真视图 ----------------
+// ---------------- 推理 · 仿真视图（统一参数表单） ----------------
+const INFER_PRESETS = {
+  libero_spatial: { env: "libero", task: "libero_spatial", taskids: "[0]", outdir: "outputs/rollout_libero_spatial", label: "LIBERO · 空间" },
+  libero_object: { env: "libero", task: "libero_object", taskids: "[0]", outdir: "outputs/rollout_libero_object", label: "LIBERO · 物体" },
+  libero_goal: { env: "libero", task: "libero_goal", taskids: "[0]", outdir: "outputs/rollout_libero_goal", label: "LIBERO · 目标" },
+  libero_long: { env: "libero", task: "libero_long", taskids: "[0]", outdir: "outputs/rollout_libero_long", label: "LIBERO · 长程" },
+  pusht_official: { env: "official", task: "", taskids: "", outdir: "outputs/rollout_pusht_official", label: "PushT · 官方" },
+  pusht_mujoco: { env: "mujoco", task: "", taskids: "", outdir: "outputs/rollout_pusht_mujoco", label: "PushT · MuJoCo" },
+};
 async function inferView(prefillPath) {
   const models = await (await fetch("/api/models")).json();
   const mOpts = models.filter((m) => m.type !== "vlm").map((m) => `<option value="${esc(m.path)}">${esc(m.name)}（${esc(m.type)}）</option>`).join("");
   const envOpts = ['<option value="libero">LIBERO（Franka · MuJoCo）</option>',
     '<option value="mujoco">PushT-MuJoCo（自建）</option>',
     '<option value="official">PushT-官方（pymunk 2D）</option>'].join("");
+  const chips = Object.entries(INFER_PRESETS).map(([k, v]) =>
+    `<button type="button" class="chip" data-preset="${k}" title="${esc(v.outdir)}">${esc(v.label)}</button>`).join("");
   mainEl.innerHTML = `<h2>🚀 推理</h2>
     <div class="card"><form id="infer-form">
+      <div class="form-row"><label>任务预设</label><div class="chips" id="inf-chips">${chips}</div></div>
       <div class="form-row"><label>仿真环境</label><select id="inf-env">${envOpts}</select>
         <span class="hint" id="inf-preset-hint"></span></div>
       <div class="form-row"><label>模型权重</label><select id="inf-model">${mOpts || '<option value="">（先导入模型）</option>'}</select></div>
       <div class="form-row"><label>或手填路径</label><input id="inf-path" value="${esc(prefillPath || "")}" placeholder="权重目录或 hub id" style="font-family:Consolas"></div>
-      <div class="form-row"><label>局数</label><input id="inf-ep" type="number" value="3" min="1" class="mini"></div>
-      <div class="form-row" id="inf-task-row"><label>LIBERO 任务</label><input id="inf-task" value="libero_spatial" style="font-family:Consolas" class="mini"><input id="inf-taskids" value="[0]" class="mini" style="width:80px"><span class="hint">task_id 范围 [0,9]；多任务如 [0,1]</span></div>
-      <div class="form-row" id="inf-outdir-row"><label>输出目录</label><input id="inf-outdir" value="outputs/rollout_gui" placeholder="PushT 用；LIBERO 自动存 outputs/eval"></div>
+      <div class="form-row"><label>推理局数</label><input id="inf-ep" type="number" value="3" min="1" class="mini"></div>
+      <div class="form-row"><label>输出目录</label><input id="inf-outdir" value="outputs/rollout_libero_spatial" placeholder="LIBERO 实时/ PushT 用；LIBERO 非实时自动存 outputs/eval"></div>
       <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="inf-live" style="width:auto;min-width:0"> 推理过程中实时推流画面（结束仍生成视频）</label></div>
+      <details id="inf-task-details"><summary>LIBERO 任务参数（套件 / task_ids）</summary>
+        <div class="form-row"><label>任务套件</label><input id="inf-task" value="libero_spatial" style="font-family:Consolas" class="mini"></div>
+        <div class="form-row"><label>task_ids</label><input id="inf-taskids" value="[0]" class="mini" style="width:90px"><span class="hint">范围 [0,9]；多任务如 [0,1]</span></div>
+      </details>
       <div class="form-row"><button type="submit">🚀 开始推理</button><span class="hint">控制台显示命令与实时输出</span></div>
     </form></div>
     <div class="card" id="live-card" style="display:none"><h3>🖥 实时仿真画面</h3>
       <div class="live-panel"><div class="live-frame"><img id="live-img" alt="waiting..."><p class="hint" id="live-status">等待画面…</p></div>
       <div class="live-meta" id="live-meta"></div></div></div>
     <div class="card"><h3>🎬 推理结果</h3><div class="gallery" id="inf-gallery"><p class="hint">（推理完成后显示视频）</p></div></div>`;
-  const applyEnvPreset = () => {
-    const env = $("#inf-env").value;
-    const taskRow = $("#inf-task-row"), outRow = $("#inf-outdir-row");
+  const applyEnvPreset = (env, task, taskids, outdir) => {
     const hint = $("#inf-preset-hint");
+    const details = $("#inf-task-details");
     if (env === "libero") {
-      taskRow.style.display = ""; outRow.style.display = "none";
-      hint.textContent = "预设：LIBERO 用 lerobot-eval 或 inference_libero（实时）";
+      details.style.display = "";
+      hint.textContent = "LIBERO 实时用 inference_libero（带流），非实时用 lerobot-eval";
     } else {
-      taskRow.style.display = "none"; outRow.style.display = "";
-      hint.textContent = "预设：PushT 官方/自建 MuJoCo（run_pusht_rollout）";
+      details.style.display = "none";
+      hint.textContent = "PushT 用 run_pusht_rollout（官方 pymunk / 自建 MuJoCo）";
     }
+    if (task) $("#inf-task").value = task;
+    if (taskids) $("#inf-taskids").value = taskids;
+    if (outdir) $("#inf-outdir").value = outdir;
   };
-  $("#inf-env").onchange = applyEnvPreset;
+  $("#inf-chips").querySelectorAll(".chip").forEach((c) => {
+    c.onclick = () => {
+      const p = INFER_PRESETS[c.dataset.preset];
+      $("#inf-env").value = p.env;
+      applyEnvPreset(p.env, p.task, p.taskids, p.outdir);
+      $("#inf-chips").querySelectorAll(".chip").forEach((x) => x.classList.toggle("active", x === c));
+    };
+  });
+  $("#inf-env").onchange = () => applyEnvPreset($("#inf-env").value);
   $("#inf-model").onchange = () => { $("#inf-path").value = $("#inf-model").value; };
   $("#infer-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -713,7 +737,107 @@ async function inferView(prefillPath) {
     if (j.stream_dir) startLive(j.project, j.stream_dir);
     runCmd("推理 " + body.env + " @" + body.policy_path, j.project, j.cmd, j.cwd, onDone);
   };
-  applyEnvPreset();
+  applyEnvPreset("libero");
+}
+
+// ---------------- RL 工作台（SAC on PushT） ----------------
+async function rlView() {
+  mainEl.innerHTML = `<h2>🎮 强化学习（SAC on PushT）</h2>
+    <div class="card"><form id="rl-form">
+      <div class="form-row"><label>运行名</label><input id="rl-job" value="sac_pusht" style="font-family:Consolas" class="mini"></div>
+      <div class="form-row"><label>训练预设</label><select id="rl-preset">
+        <option value="smoke">🔥 冒烟（600 交互步 · 约 1-2 分钟）</option>
+        <option value="short">⚡ 短训（3000 步 · 约 5-10 分钟）</option>
+        <option value="full">🚀 正式（10 万步 · 数小时）</option></select></div>
+      <details><summary>高级参数（留空则用预设值）</summary>
+        <div class="form-row"><label>episode_length</label><input id="rl-elen" type="number" class="mini" placeholder="200/300"></div>
+        <div class="form-row"><label>online_steps（交互步数）</label><input id="rl-steps" type="number" class="mini" placeholder="600/3000/100000"></div>
+        <div class="form-row"><label>batch_size</label><input id="rl-batch" type="number" value="64" class="mini"></div>
+        <div class="form-row"><label>save_freq</label><input id="rl-save" type="number" class="mini" placeholder="200/1000/10000"></div>
+        <div class="form-row"><label>开始学习前步数</label><input id="rl-before" type="number" value="40" class="mini"></div>
+        <div class="form-row"><label>obs_type</label><select id="rl-obs"><option value="pixels_agent_pos">pixels_agent_pos（96×96 视觉 + 状态）</option><option value="environment_state_agent_pos">environment_state_agent_pos（16 关键点 + 状态）</option></select></div>
+        <div class="form-row"><label>设备</label><select id="rl-device"><option value="cuda">cuda</option><option value="cpu">cpu</option></select></div>
+        <div class="form-row"><label>fps</label><input id="rl-fps" type="number" value="10" class="mini"></div>
+      </details>
+      <div class="form-row"><button type="submit">🎮 开始训练（learner + actor）</button>
+        <span class="hint">SAC 双进程：learner 训练 + actor 交互，监督脚本负责启停与 checkpoint</span></div>
+    </form></div>
+    <div class="card"><h3>📦 训练运行 <button id="rl-refresh" class="secondary">🔄 刷新</button></h3><div id="rl-runs"></div></div>
+    <div class="card" id="rl-eval-card" style="display:none"><h3>🎯 评估 checkpoint</h3><div id="rl-eval-form"></div></div>
+    <div class="card" id="live-card" style="display:none"><h3>🖥 实时仿真画面</h3>
+      <div class="live-panel"><div class="live-frame"><img id="live-img" alt="waiting..."><p class="hint" id="live-status">等待画面…</p></div>
+      <div class="live-meta" id="live-meta"></div></div></div>
+    <div class="card"><h3>🎬 评估结果</h3><div class="gallery" id="inf-gallery"><p class="hint">（评估完成后显示视频）</p></div></div>`;
+
+  const run = async () => {
+    const body = {
+      job_name: $("#rl-job").value, preset: $("#rl-preset").value,
+      episode_length: $("#rl-elen").value, online_steps: $("#rl-steps").value,
+      batch_size: $("#rl-batch").value, save_freq: $("#rl-save").value,
+      online_before: $("#rl-before").value, obs_type: $("#rl-obs").value,
+      device: $("#rl-device").value, fps: $("#rl-fps").value,
+    };
+    const j = await (await fetch("/api/rl", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    })).json();
+    if (j.error) { alert("失败: " + j.error); return; }
+    runCmd("RL 训练 " + body.job_name, j.project, j.cmd, j.cwd, refreshRuns);
+  };
+
+  const refreshRuns = async () => {
+    const runs = await (await fetch("/api/rl_runs")).json();
+    const el = $("#rl-runs");
+    if (!el) return;
+    if (!runs.length) { el.innerHTML = '<p class="hint">（暂无 RL 训练运行。点上方「开始训练」跑一次冒烟）</p>'; return; }
+    el.innerHTML = runs.map((r) => `
+      <div class="model-card">
+        <div class="model-head"><span class="model-name">📦 ${esc(r.job)}（${esc(r.dir)}）</span></div>
+        <div class="model-meta">
+          <span class="metric">优化步数=${r.opt_step ?? "—"}</span>
+          <span class="metric">交互局=${r.n_episodes}</span>
+          <span class="metric">最新局奖励=${r.latest_ep_reward ?? "—"}</span>
+          <span class="metric">checkpoints=[${r.checkpoints.join(", ")}]${r.has_last ? " + last" : ""}</span>
+        </div>
+        <div class="model-actions">
+          <select class="rl-ck" data-dir="${esc(r.dir)}">
+            ${(r.checkpoints.length ? r.checkpoints : []).map((s) => `<option value="${s}">${s}</option>`).join("")}
+            ${r.has_last ? '<option value="last">last</option>' : ""}
+          </select>
+          <button class="secondary rl-eval" data-dir="${esc(r.dir)}" data-job="${esc(r.job)}">🎯 评估该 checkpoint</button>
+          <a class="btn-link" href="/proj/libero/out/${esc(r.dir)}/checkpoints/last" target="_blank">📂 打开目录</a>
+        </div>
+      </div>`).join("");
+    el.querySelectorAll(".rl-eval").forEach((b) => {
+      b.onclick = () => showRlEval(b.dataset.dir, b.dataset.job);
+    });
+  };
+
+  const showRlEval = (dir, job) => {
+    const card = $("#rl-eval-card");
+    card.style.display = "";
+    $("#rl-eval-form").innerHTML = `<form id="rl-eval-form-inner">
+      <div class="form-row"><label>checkpoint</label><input id="rev-ck" value="${esc(dir)}/checkpoints/last" style="font-family:Consolas" class="mini"></div>
+      <div class="form-row"><label>局数</label><input id="rev-ep" type="number" value="3" min="1" class="mini"></div>
+      <div class="form-row"><label>输出目录</label><input id="rev-outdir" value="outputs/eval/sac_pusht_gui" class="mini"></div>
+      <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="rev-live" style="width:auto;min-width:0"> 评估过程实时推流</label></div>
+      <div class="form-row"><button type="submit">🎯 开始评估</button></div></form>`;
+    $("#rl-eval-form-inner").onsubmit = async (e) => {
+      e.preventDefault();
+      const body = { checkpoint: $("#rev-ck").value, episodes: $("#rev-ep").value,
+                     outdir: $("#rev-outdir").value, stream: $("#rev-live").checked };
+      const j = await (await fetch("/api/rl_eval", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      })).json();
+      if (j.error) { alert("失败: " + j.error); return; }
+      const onDone = () => { stopLive(); showVideos(j.project, j.out_root || "outputs"); };
+      if (j.stream_dir) startLive(j.project, j.stream_dir);
+      runCmd("RL 评估 " + job + " @" + body.checkpoint, j.project, j.cmd, j.cwd, onDone);
+    };
+  };
+
+  $("#rl-form").onsubmit = (e) => { e.preventDefault(); run(); };
+  $("#rl-refresh").onclick = refreshRuns;
+  refreshRuns();
 }
 let _liveEs = null;
 let _liveStop = false;
@@ -945,6 +1069,7 @@ async function loadGlobalNav() {
 $("#nav-datasets").onclick = (e) => { e.preventDefault(); datasetsView(); };
 $("#nav-models").onclick = (e) => { e.preventDefault(); modelsView(); };
 $("#nav-train").onclick = (e) => { e.preventDefault(); trainView(); };
+$("#nav-rl").onclick = (e) => { e.preventDefault(); rlView(); };
 $("#nav-infer").onclick = (e) => { e.preventDefault(); inferView(); };
 $("#nav-analysis").onclick = (e) => { e.preventDefault(); analysisView(); };
 $("#nav-report").onclick = (e) => {

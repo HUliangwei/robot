@@ -46,6 +46,24 @@
       "cmd": "python -c \"print('见 https://github.com/huggingface/lerobot/blob/main/docs/source/libero.mdx')\"",
       "cwd": ".",
       "desc": "LeRobot 官方 LIBERO 使用文档"
+    },
+    {
+      "name": "SAC on PushT 冒烟（600 交互步）",
+      "cmd": "python rl_scripts/run_sac_pusht.py --config_path rl_configs/sac_pusht_smoke.json --clean",
+      "cwd": "workspace/libero",
+      "desc": "HILSerl learner+actor 双进程驱动 gym-pusht，~2 分钟出 checkpoint；--settle_s 控制冲刷时长"
+    },
+    {
+      "name": "SAC on PushT 短训（3000 步）",
+      "cmd": "python rl_scripts/run_sac_pusht.py --config_path rl_configs/sac_pusht_short.json --clean",
+      "cwd": "workspace/libero",
+      "desc": "约 5-10 分钟；改 rl_configs 里的 online_steps/episode_length/save_freq 即可定制"
+    },
+    {
+      "name": "评估 SAC checkpoint",
+      "cmd": "python rl_scripts/eval_sac_pusht.py --checkpoint outputs/train/sac_pusht_smoke/checkpoints/last --n-episodes 3 --outdir outputs/eval/sac_pusht_gui",
+      "cwd": "workspace/libero",
+      "desc": "加载 checkpoint 在 gym-pusht 跑 N 局：metrics.json + 视频（支持 --stream-dir 实时推流）"
     }
   ]
 }

@@ -318,6 +318,130 @@ def build_infer_cmd(b):
     return cmd, project, cwd, out_root, (stream_dir if stream else None)
 
 
+# ---------------- RL 工作台（SAC on PushT） ----------------
+
+RL_PRESETS = {
+    # 预设: episode_length / online_steps(交互步数) / save_freq / settle_s(结束后冲刷秒数)
+    "smoke": {"episode_length": 200, "online_steps": 600, "save_freq": 200, "settle": 20},
+    "short": {"episode_length": 300, "online_steps": 3000, "save_freq": 1000, "settle": 30},
+    "full":  {"episode_length": 300, "online_steps": 100000, "save_freq": 10000, "settle": 60},
+}
+
+_RL_CONFIG_DIR = os.path.join(WORKSPACE, "libero", "rl_configs", "generated")
+
+
+def build_rl_cmd(b):
+    """RL 工作台：生成 SAC-on-PushT 配置 JSON + run_sac_pusht.py 监督命令。
+
+    返回 (cmd, project, cwd, config_path, outdir)。
+    """
+    job = re.sub(r"[^A-Za-z0-9_\-]", "_", (b.get("job_name") or "sac_pusht").strip()) or "sac_pusht"
+    preset = (b.get("preset") or "smoke").strip()
+    p = RL_PRESETS.get(preset, RL_PRESETS["smoke"])
+    episode_length = int(b.get("episode_length") or p["episode_length"])
+    online_steps = int(b.get("online_steps") or p["online_steps"])
+    save_freq = int(b.get("save_freq") or p["save_freq"])
+    batch = int(b.get("batch_size") or 64)
+    online_before = int(b.get("online_before") or 40)
+    log_freq = int(b.get("log_freq") or 50)
+    device = (b.get("device") or "cuda").strip()
+    obs_type = (b.get("obs_type") or "pixels_agent_pos").strip()
+    fps = int(b.get("fps") or 10)
+
+    cfg = {
+        "job_name": job,
+        "env": {
+            "type": "pusht", "task": "PushT-v0", "fps": fps, "episode_length": episode_length,
+            "obs_type": obs_type, "render_mode": "rgb_array",
+            "observation_height": 96, "observation_width": 96,
+            "visualization_width": 384, "visualization_height": 384,
+        },
+        "policy": {
+            "type": "gaussian_actor", "device": device, "storage_device": device,
+            "push_to_hub": False, "freeze_vision_encoder": False,
+            "online_steps": online_steps, "online_step_before_learning": online_before,
+            "online_buffer_capacity": 100000, "offline_buffer_capacity": 10000,
+            "dataset_stats": {
+                "observation.image": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
+                "observation.state": {"min": [0.0, 0.0], "max": [512.0, 512.0]},
+                "action": {"min": [256.0, 256.0], "max": [512.0, 512.0]},
+            },
+            "concurrency": {"actor": "threads", "learner": "threads"},
+            "actor_learner_config": {
+                "learner_host": "127.0.0.1", "learner_port": 50051,
+                "policy_parameters_push_frequency": 4, "queue_get_timeout": 2,
+            },
+        },
+        "algorithm": {"type": "sac", "utd_ratio": 1, "policy_update_freq": 1},
+        "output_dir": f"outputs/train/{job}",
+        "steps": online_steps,
+        "batch_size": batch,
+        "save_freq": save_freq,
+        "log_freq": log_freq,
+        "seed": 1000,
+        "wandb": {"enable": False},
+    }
+    os.makedirs(_RL_CONFIG_DIR, exist_ok=True)
+    fname = f"{job}_{int(time.time() * 1000)}.json"
+    with open(os.path.join(_RL_CONFIG_DIR, fname), "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    cmd = (f"python rl_scripts/run_sac_pusht.py --config_path rl_configs/generated/{fname} "
+           f"--settle_s {p['settle']} --clean")
+    return cmd, "libero", "workspace/libero", f"rl_configs/generated/{fname}", f"outputs/train/{job}"
+
+
+def rl_runs_list():
+    """列出 RL 训练目录（checkpoints / 优化步数 / episode 奖励）。"""
+    base = os.path.join(WORKSPACE, "libero", "outputs", "train")
+    out = []
+    if not os.path.isdir(base):
+        return out
+    for d in sorted(os.listdir(base)):
+        full = os.path.join(base, d)
+        if not os.path.isdir(full):
+            continue
+        ck = os.path.join(full, "checkpoints")
+        if not os.path.isdir(ck):
+            continue
+        steps = sorted(x for x in os.listdir(ck) if x.isdigit())
+        if not steps and not os.path.isdir(os.path.join(ck, "last")):
+            continue
+        # 确认是 RL 训练（gaussian_actor 策略）
+        sample = steps[0] if steps else "last"
+        pm = os.path.join(ck, sample, "pretrained_model")
+        cfgp = os.path.join(pm, "config.json")
+        if os.path.isfile(cfgp):
+            try:
+                c = json.load(open(cfgp, encoding="utf-8"))
+                if c.get("type") != "gaussian_actor":
+                    continue
+            except Exception:
+                continue
+        opt_step, ep_reward, n_ep = None, None, 0
+        ldir = os.path.join(full, "logs")
+        if os.path.isdir(ldir):
+            for fn in os.listdir(ldir):
+                fp = os.path.join(ldir, fn)
+                if not os.path.isfile(fp):
+                    continue
+                try:
+                    txt = open(fp, encoding="utf-8", errors="replace").read()
+                except Exception:
+                    continue
+                ms = re.findall(r"Number of optimization step: (\d+)", txt)
+                if ms:
+                    opt_step = int(ms[-1])
+                es = re.findall(r"Global step (\d+): Episode reward: ([\d.]+)", txt)
+                if es:
+                    n_ep = len(es)
+                    ep_reward = round(float(es[-1][1]), 3)
+        out.append({"dir": f"outputs/train/{d}", "job": d, "checkpoints": steps,
+                    "has_last": os.path.isdir(os.path.join(ck, "last")),
+                    "opt_step": opt_step, "n_episodes": n_ep, "latest_ep_reward": ep_reward})
+    out.sort(key=lambda r: r["dir"])
+    return out
+
+
 def find_projects():
     projects = []
     if not os.path.isdir(WORKSPACE):
@@ -477,6 +601,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(info, ensure_ascii=False))
         if path == "/api/analysis":
             return self._send(200, json.dumps(find_metrics(), ensure_ascii=False))
+        if path == "/api/rl_runs":
+            return self._send(200, json.dumps(rl_runs_list(), ensure_ascii=False))
         if path.startswith("/ws/stream"):
             import base64 as _b64
             import glob as _glob
@@ -850,6 +976,40 @@ class Handler(BaseHTTPRequestHandler):
                                                    "out_root": out_root, "stream_dir": stream_dir}))
             except Exception as e:
                 return self._send(400, json.dumps({"error": str(e)}))
+        if u.path == "/api/rl":
+            # RL 工作台：SAC on PushT 训练（learner + actor 由 run_sac_pusht.py 监督）
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            try:
+                cmd, proj, cwd, config_path, outdir = build_rl_cmd(body)
+                run_id = start_run(proj, cmd, cwd)
+                return self._send(200, json.dumps({"run_id": run_id, "project": proj, "cmd": cmd, "cwd": cwd,
+                                                   "config_path": config_path, "outdir": outdir}))
+            except Exception as e:
+                return self._send(400, json.dumps({"error": str(e)}))
+        if u.path == "/api/rl_eval":
+            # 评估 RL checkpoint（eval_sac_pusht.py）
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            ck = (body.get("checkpoint") or "").strip().replace("\\", "/").lstrip("/")
+            if not ck or ".." in ck.split("/"):
+                return self._send(400, json.dumps({"error": "checkpoint 参数非法"}))
+            episodes = int(body.get("episodes") or 3)
+            outdir = (body.get("outdir") or "outputs/eval/sac_pusht_gui").strip().replace("\\", "/").strip("/")
+            if outdir.startswith(".."):
+                return self._send(400, json.dumps({"error": "输出目录必须是项目内相对路径"}))
+            stream_dir = f"outputs/stream/{int(time.time() * 1000)}"
+            cmd = (f"python rl_scripts/eval_sac_pusht.py --checkpoint {ck} "
+                   f"--n-episodes {episodes} --outdir {outdir}")
+            if bool(body.get("stream")):
+                cmd += f" --stream-dir {stream_dir}"
+            try:
+                run_id = start_run("libero", cmd, "workspace/libero")
+                return self._send(200, json.dumps({"run_id": run_id, "project": "libero", "cmd": cmd,
+                                                   "cwd": "workspace/libero", "out_root": outdir,
+                                                   "stream_dir": stream_dir if bool(body.get("stream")) else None}))
+            except Exception as e:
+                return self._send(500, json.dumps({"error": str(e)}))
         if u.path.startswith("/api/run/"):
             parts = u.path.split("/")
             run_id = parts[3]

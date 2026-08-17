@@ -86,6 +86,13 @@ td.small { font-size: .72rem; color: var(--muted); }
 .form-row input:focus, .form-row select:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px rgba(232,134,60,.15); }
 .form-row button { flex: 0 0 auto; }
 .form-row .mini { max-width: 130px; }
+.chips { display: flex; gap: .45rem; flex-wrap: wrap; flex: 1; }
+.chip { background: #f0f4f9; border: 1px solid var(--line2); color: #3c4757; border-radius: 999px;
+  padding: .3rem .8rem; font-size: .78rem; cursor: pointer; transition: all .15s; }
+.chip:hover { border-color: var(--acc); color: var(--acc); }
+.chip.active { background: var(--acc); border-color: var(--acc); color: #fff; }
+.btn-link { font-size: .8rem; color: var(--acc); text-decoration: none; align-self: center; padding: .3rem .6rem; }
+.btn-link:hover { text-decoration: underline; }
 
 /* ---- architecture ---- */
 .arch { display: flex; flex-direction: column; gap: .8rem; padding: .4rem 0; }

@@ -67,6 +67,32 @@ def patch(path, old, new):
     return True
 
 
+# gym_manipulator.py 中插入的 pusht 专用 action 步骤（存储归一化 teleop_action）
+_PUSHT_TELEOP_STEP = '''@dataclass
+class PushtTeleopActionProcessorStep(ComplementaryDataProcessorStep):
+    """PushT: 把 *归一化* 的策略 action 存为 ``teleop_action``。
+
+    gym-pusht 期望 [0, 512] 的绝对目标位置，而 tanh 高斯策略输出 (-1, 1)。
+    actor 的 postprocessor 用 action 统计量（min=256, max=512 → env action = t*256+256）
+    反归一化后再 env.step；replay buffer 必须存归一化值，这样 critic（batch 里的 action）
+    与 actor（tanh 采样）处于同一尺度。
+    """
+
+    action_min: float = 256.0
+    action_max: float = 512.0
+
+    def complementary_data(self, complementary_data: dict) -> dict:
+        action = self._current_transition.get(TransitionKey.ACTION)
+        if isinstance(action, torch.Tensor):
+            norm = (action - self.action_min) / (self.action_max - self.action_min)
+            complementary_data[TELEOP_ACTION_KEY] = norm.detach().clone()
+        return complementary_data
+
+    def transform_features(self, features):
+        return features
+'''
+
+
 def main():
     print("== 1) egl_probe stub ==")
     make_stub()
@@ -140,6 +166,129 @@ def main():
                        os.path.join(SITE, "libero", "libero", "init_files"),
                        os.path.join(HERE, "..", "..", "datasets")))
         print("  wrote", cfg_file)
+
+    print("\n== 5) lerobot 0.6.1 RL: PushT 支持补丁 ==")
+    LEROBOT = os.path.join(SITE, "lerobot")
+    # 5.1) TrainPipelineConfig.validate(): RL 模式下 dataset 为 None（HILSerl 无需离线数据集）
+    changed += patch(os.path.join(LEROBOT, "configs", "train.py"),
+                     "        if isinstance(self.dataset.repo_id, list):",
+                     "        if self.dataset is not None and isinstance(self.dataset.repo_id, list):")
+    changed += patch(os.path.join(LEROBOT, "configs", "train.py"),
+                     "        if self.eval_steps > 0 and self.dataset.eval_split == 0.0:",
+                     "        if self.eval_steps > 0 and (self.dataset is None or self.dataset.eval_split == 0.0):")
+    # 5.2) gym_manipulator: 让 HILSerl actor/learner 支持 PushtEnv（gym-pusht）
+    GM = os.path.join(LEROBOT, "rl", "gym_manipulator.py")
+    changed += patch(GM,
+                     "from lerobot.teleoperators.utils import TeleopEvents\n",
+                     "from lerobot.teleoperators.utils import TeleopEvents\n"
+                     "from lerobot.processor.hil_processor import TELEOP_ACTION_KEY  # Windows patch: RL pusht\n")
+    changed += patch(GM,
+                     "    AddTeleopEventsAsInfoStep,\n    DataProcessorPipeline,",
+                     "    AddTeleopEventsAsInfoStep,\n    ComplementaryDataProcessorStep,\n    DataProcessorPipeline,")
+    changed += patch(GM,
+                     "def make_robot_env(cfg: HILSerlRobotEnvConfig) -> tuple[gym.Env, Any]:",
+                     _PUSHT_TELEOP_STEP + "\n\n\ndef make_robot_env(cfg: HILSerlRobotEnvConfig) -> tuple[gym.Env, Any]:")
+    changed += patch(GM,
+                     "    # Check if this is a GymHIL simulation environment\n    if cfg.name == \"gym_hil\":",
+                     "    # PushT simulation (gym-pusht). Windows patch: HILSerl 只支持 gym_hil / 真机，\n"
+                     "    # 这里为 PushtEnv 配置（type == \"pusht\"）提供一等支持。\n"
+                     "    if getattr(cfg, \"type\", None) == \"pusht\":\n"
+                     "        import gym_pusht  # noqa: F401  # 注册 \"gym_pusht/PushT-v0\"\n"
+                     "        env = gym.make(cfg.gym_id, disable_env_checker=True, **cfg.gym_kwargs)\n"
+                     "        return env, None\n"
+                     "\n"
+                     "    # Check if this is a GymHIL simulation environment\n    if cfg.name == \"gym_hil\":")
+    changed += patch(GM,
+                     "    terminate_on_success = (\n"
+                     "        cfg.processor.reset.terminate_on_success if cfg.processor.reset is not None else True\n"
+                     "    )",
+                     "    if getattr(cfg, \"type\", None) == \"pusht\":\n"
+                     "        env_pipeline_steps = [VanillaObservationProcessorStep()]\n"
+                     "        action_pipeline_steps = [\n"
+                     "            PushtTeleopActionProcessorStep(),\n"
+                     "            Torch2NumpyActionProcessorStep(),\n"
+                     "        ]\n"
+                     "        return DataProcessorPipeline(\n"
+                     "            steps=env_pipeline_steps, to_transition=identity_transition, to_output=identity_transition\n"
+                     "        ), DataProcessorPipeline(\n"
+                     "            steps=action_pipeline_steps, to_transition=identity_transition, to_output=identity_transition\n"
+                     "        )\n"
+                     "\n"
+                     "    terminate_on_success = (\n"
+                     "        cfg.processor.reset.terminate_on_success if cfg.processor.reset is not None else True\n"
+                     "    )")
+    # 5.3) actor: HILSerl 工作流里 learner 先启动已创建 output_dir，actor 的 validate()
+    #     会因 "output dir already exists" 报错 —— actor 只用该目录写日志，放行。
+    changed += patch(os.path.join(LEROBOT, "rl", "actor.py"),
+                     "    try:\n"
+                     "        cfg.validate()\n"
+                     "    except FileExistsError:\n"
+                     "        # Windows patch: learner 先启动已创建 output_dir，actor 只写日志，无需全新目录\n"
+                     "        pass\n"
+                     "    display_pid = False",
+                     "    try:\n"
+                     "        cfg.validate()\n"
+                     "    except FileExistsError:\n"
+                     "        # Windows patch: learner 先启动已创建 output_dir，actor 只写日志，无需全新目录\n"
+                     "        pass\n"
+                     "    # validate 提前中断时（上面吞掉 FileExistsError），补齐 algorithm.policy_config，\n"
+                     "    # 否则 make_algorithm() 会报 'policy_config is None'\n"
+                     "    if getattr(cfg.algorithm, \"policy_config\", None) is None:\n"
+                     "        cfg.algorithm.policy_config = cfg.policy\n"
+                     "    display_pid = False")
+    # 5.4) transport: actor 传来的 transition 含 numpy 标量（gym-pusht reward 是 np.float64），
+    #     torch 2.6+ torch.load 默认 weights_only=True 会拒绝 —— 本地可信管道回退到完整加载
+    TU = os.path.join(LEROBOT, "transport", "utils.py")
+    changed += patch(TU,
+                     "def bytes_to_transitions(buffer: bytes) -> list[Transition]:\n"
+                     "    bytes_buffer = io.BytesIO(buffer)\n"
+                     "    bytes_buffer.seek(0)\n"
+                     "    transitions = torch.load(bytes_buffer, weights_only=True)\n"
+                     "    return transitions",
+                     "def bytes_to_transitions(buffer: bytes) -> list[Transition]:\n"
+                     "    bytes_buffer = io.BytesIO(buffer)\n"
+                     "    bytes_buffer.seek(0)\n"
+                     "    try:\n"
+                     "        return torch.load(bytes_buffer, weights_only=True)\n"
+                     "    except (pickle.UnpicklingError, RuntimeError):\n"
+                     "        # Windows patch: transition 里含 numpy 标量（如 gym-pusht reward），\n"
+                     "        # torch 2.6+ weights_only=True 拒绝；本地可信管道回退完整加载\n"
+                     "        bytes_buffer.seek(0)\n"
+                     "        return torch.load(bytes_buffer, weights_only=False)")
+    changed += patch(TU,
+                     "def bytes_to_state_dict(buffer: bytes) -> dict[str, torch.Tensor]:\n"
+                     "    bytes_buffer = io.BytesIO(buffer)\n"
+                     "    bytes_buffer.seek(0)\n"
+                     "    return torch.load(bytes_buffer, weights_only=True)",
+                     "def bytes_to_state_dict(buffer: bytes) -> dict[str, torch.Tensor]:\n"
+                     "    bytes_buffer = io.BytesIO(buffer)\n"
+                     "    bytes_buffer.seek(0)\n"
+                     "    try:\n"
+                     "        return torch.load(bytes_buffer, weights_only=True)\n"
+                     "    except (pickle.UnpicklingError, RuntimeError):\n"
+                     "        bytes_buffer.seek(0)\n"
+                     "        return torch.load(bytes_buffer, weights_only=False)")
+    # 5.5) ReplayBuffer: 默认关闭 DRQ 图像增强 —— DRQ 需要 torch.compile+triton，
+    #     Windows 无 triton，producer 线程静默崩溃导致训练死锁
+    BUF = os.path.join(LEROBOT, "rl", "buffer.py")
+    changed += patch(BUF,
+                     "        image_augmentation_function: Callable | None = None,\n"
+                     "        use_drq: bool = True,\n"
+                     "        storage_device: str = \"cpu\",",
+                     "        image_augmentation_function: Callable | None = None,\n"
+                     "        use_drq: bool = False,  # Windows patch: 默认关闭 DRQ 图像增强（torch.compile 需 triton）\n"
+                     "        storage_device: str = \"cpu\",")
+    changed += patch(BUF,
+                     "        image_augmentation_function: Callable | None = None,\n"
+                     "        use_drq: bool = True,\n"
+                     "        storage_device: str = \"cpu\",\n"
+                     "        optimize_memory: bool = False,\n"
+                     "    ) -> \"ReplayBuffer\":",
+                     "        image_augmentation_function: Callable | None = None,\n"
+                     "        use_drq: bool = False,  # Windows patch: 默认关闭 DRQ（torch.compile 需 triton）\n"
+                     "        storage_device: str = \"cpu\",\n"
+                     "        optimize_memory: bool = False,\n"
+                     "    ) -> \"ReplayBuffer\":")
 
     print(f"\n完成（本次变更 {changed} 处）。运行 python verify_env.py 验证。")
 

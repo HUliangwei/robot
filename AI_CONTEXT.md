@@ -62,6 +62,16 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 - **Windows 关键坑**：① 评估必须 `--env.max_parallel_tasks=1 --eval.use_async_envs=false`（AsyncVectorEnv 会挂起）② `~/.libero/config.yaml` 需预建 ③ robosuite 补丁见 setup_windows_patches.py ④ SmolVLA 推理 ~1.4s/步（慢但正常）⑤ 大模型下载用 hf-mirror（36MB/s）+ 注入 HF 缓存（snapshot 目录）
 - 学习 Notebook：`notebooks/01_LIBERO_环境与数据学习.ipynb`（8 节）；推理脚本：`inference_libero.py`
 
+**RL：SAC on PushT 全链路打通（2026-08-18）** 🎉
+- **lerobot 0.6.1 的 HILSerl RL 管线（learner gRPC + actor）成功驱动 gym-pusht**：双进程冒烟 600 交互步 → SAC 训练 ~20 步/s → checkpoint 000200/000400/000600/000800 落盘 ✅
+- 冒烟 800 优化步的权重评估：ep0 覆盖率 26.6%（欠训练但证明管线有效）；评估脚本 `rl_scripts/eval_sac_pusht.py` 生成 metrics.json + 视频
+- **归一化设计（关键）**：gym-pusht action 是 [0,512] 像素目标位置，tanh 高斯策略输出 (-1,1)；dataset_stats 用 action min=256/max=512（`x=t*256+256 ∈ (0,512)`）保证尺度一致；replay buffer 存归一化 action（PushtTeleopActionProcessorStep 存入 teleop_action）
+- **Windows 补丁（setup_windows_patches.py §5，全部幂等）**：① train.py validate 允许 dataset=None（RL 无离线数据）② gym_manipulator 支持 pusht env（make_robot_env/make_processors + teleop_action 步骤）③ actor validate 容忍 output_dir 已存在 + 补齐 algorithm.policy_config ④ transport torch.load weights_only 回退（transition 含 numpy 标量）⑤ **ReplayBuffer 默认关 DRQ**（torch.compile+triton 在 Windows 不可用，producer 线程静默崩溃导致训练死锁——最难排查的一坑，faulthandler 定位）
+- **启动方式**：`python rl_scripts/run_sac_pusht.py --config_path rl_configs/sac_pusht_smoke.json --clean`（learner→等端口→actor→等完成→冲刷→落盘→清理；子进程 stdout 直接写文件避免管道死锁）
+- 配置文件：`rl_configs/sac_pusht_smoke.json`（smoke 600 步 / short 3000 / full 10 万可调）
+
+**GUI v3 RL 工作台（2026-08-18）**：新增「🎮 强化学习」视图（预设 冒烟/短训/正式 + 高级参数 → 生成配置 → 监督运行 → 训练运行列表 + checkpoint 评估表单 + 实时推流）；「🚀 推理」表单统一化（任务预设 chips 一键填充环境/任务/输出目录，LIBERO 参数收进折叠区）；后端 /api/rl /api/rl_eval /api/rl_runs。
+
 **结构整理**：删除空目录（notes/datasets/examples/models/.vscode）、陈旧 rollout（rollout_mujoco/rollout_official*/lemon/smoke）、顶层 outputs/my_rollout；保留证据视频与权重。
 **GUI 升级**：新增「全部文件」浏览（项目内所有文件可查看：md/ipynb/代码/媒体）+ 全局 README/笔记/文档导航；修复 AI_CONTEXT 导航链接（原路径 404）；**项目页顶部展示 README 项目介绍**；**命令输出实时流式**（PYTHONUNBUFFERED=1，修复块缓冲导致 GUI 读不到输出的问题）。
 **README 结构化**：两个小项目 README 统一为 7 段式（数据集/模型架构/权重路径/训练入口/推理/仿真与推理示例/分析），GUI 项目页直接渲染，便于学习与个人网站展示。
@@ -99,11 +109,12 @@ python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
    - **下载与评估/训练不可并行**（会互相卡网络导致评估挂起）
    - 注意仓库总大小：SmolVLM2-500M-Instruct 仓库 7.9GB（含 5GB ONNX），只需 model.safetensors + 配置文件
 
-## 7. 下一步 / 待办（2026-08-17）
+## 7. 下一步 / 待办（2026-08-18）
 
-- [ ] LIBERO：完成 libero 栈安装验证（`python workspace/libero/verify_env.py`）→ 下载数据集 → ACT 训练
+- [x] RL 工作台：SAC on PushT 全链路冒烟（600 步训练 → checkpoint → 评估）
+- [ ] SAC 正式训练：短训 3000 步起，观察覆盖率曲线；目标 >95% 成功率（预算 10 万步级）
+- [ ] RL checkpoint 评估接入分析视图（metrics 已在 outputs/eval/sac_pusht_*）
 - [ ] （物理待续）PushT MuJoCo 残余旋转：试 solimp 曲线 / 或接受差异专注策略侧
-- [ ] 达成 >95% PushT 成功（官方配方 batch8 + 60-80k 步 / 或 gated `lerobot/act_pusht`）
 - [ ] 网页端策略服务化（FastAPI 骨架见 docs/工作流 §6）
 - [ ] gui 仪表盘后续增强（如在线 rollout 流式预览）
 
@@ -114,3 +125,4 @@ python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
 - 2026-08-17：LIBERO 立项（骨架 + egl_probe stub 安装方案）；文件结构整理（删空目录/陈旧 rollout）；GUI 升级（文件浏览 + 全局导航）；残余旋转诊断记录（排除 5 类假设）
 - 2026-08-17：LIBERO 全链路打通（数据/训练/评估冒烟）；SmolVLA 官方模型评估 80% 成功（hf-mirror 下载基础模型 + 注入缓存）
 - 2026-08-17：GUI 命令输出实时流式修复（PYTHONUNBUFFERED）；项目页展示 README；两个小项目 README 结构化（数据/模型/权重/训练/推理/仿真/分析）
+- 2026-08-18：**SAC on PushT RL 全链路打通**（HILSerl learner+actor 驱动 gym-pusht，600 步冒烟出 checkpoint）；新增 5 个 Windows 补丁（RL 相关）；GUI v3（RL 工作台 + 推理表单统一预设）；RL 评估脚本

@@ -21,6 +21,7 @@
 | **预训练权重推理** | ✅ **SmolVLA 80% 成功！** | ACT：ishandotsh 0/10、Deepkar 0/1（弱权重）；**官方 SmolVLA：LIBERO-Spatial task0 5 局 4 成功（80%）** |
 | ACT 正式训练 | ⏳ 待做（用户暂定用预训练权重，不训练） | LIBERO-Spatial：10k≈1-2h / 25k≈3-6h |
 | SmolVLA（VLA 学习） | ✅ **评估通过（80%）** | 基础模型 SmolVLM2-500M 已下载（hf-mirror 36MB/s）+ 注入缓存 |
+| **RL：SAC on PushT** | ✅ **全链路打通** | **2026-08-18**：lerobot 0.6.1 HILSerl（learner gRPC + actor）驱动 gym-pusht；600 步冒烟 → checkpoint 000200-000800；评估 ep0 覆盖率 26.6%（欠训练） |
 
 ## 环境验证记录
 
@@ -42,10 +43,21 @@
 - [x] ~~评估冒烟（1 局）~~ ✅ 2026-08-17（Windows 需 max_parallel_tasks=1 + use_async_envs=false）
 - [x] ~~预训练 ACT 权重推理~~ ✅ 2026-08-17（0/10 弱权重，流程验证 OK）
 - [x] ~~SmolVLA 官方模型评估~~ ✅ **2026-08-17：LIBERO-Spatial task0 成功率 80%（4/5）**（视频在 outputs/eval_smolvla_spatial_t0/）
+- [x] ~~SAC on PushT RL 冒烟~~ ✅ **2026-08-18：600 交互步全链路通过**（见下「RL 记录」）
+- [ ] SAC 正式训练：3000 步短训 → 观察覆盖率曲线（预算：10 万步级才能 >95%）
+- [ ] RL checkpoint 评估批量跑（多 checkpoint 对比）→ 接入分析视图
 - [ ] 排查 libero_10 套件评估挂起问题（spatial 正常，libero_10 挂；已确认环境直测 OK，问题在评估代码路径）
 - [ ] 扩展评估：SmolVLA 在 task0-9 全任务 + 其他套件（object/goal）
 - [ ] ACT 正式训练（可选，用户暂定不训练）
 - [ ] 进阶：SmolVLA 训练教程（lerobot 文档：smolvla）
+
+## RL 记录（2026-08-18，SAC on PushT）
+
+- **架构**：lerobot 0.6.1 的 HILSerl RL 是分布式双进程——`python -m lerobot.rl.learner --config_path <json>`（gRPC 服务 + SAC 训练）+ `python -m lerobot.rl.actor`（环境交互 + 发 transition）。冒烟由 `rl_scripts/run_sac_pusht.py` 监督（learner → 等端口 50051 → actor → 等 actor 跑完 → 冲刷 → 落盘 → 清理）。
+- **归一化（关键）**：gym-pusht 的 action 是 [0,512] 像素目标位置（PD 控制），tanh 高斯策略输出 (-1,1)。dataset_stats 设 action `min=[256,256], max=[512,512]`（反归一化 `x=t*256+256 ∈ (0,512)`）使 actor/critic 尺度一致；replay buffer 存归一化 action（`PushtTeleopActionProcessorStep` 把归一化值写入 teleop_action）；obs 96×96 + ImageNet mean/std，state MIN_MAX [0,512]。
+- **Windows 补丁（setup_windows_patches.py §5）**：① train.py validate 放行 dataset=None（RL 无离线数据）② gym_manipulator 加 pusht 分支（make_robot_env/make_processors）③ actor validate 容忍 output_dir 已存在 + 补 algorithm.policy_config ④ transport `torch.load` weights_only 回退（transition 含 numpy 标量）⑤ **ReplayBuffer 默认关 DRQ**——DRQ 需要 torch.compile+triton（Windows 无），producer 线程异常被静默吞掉 → 主线程死锁在 `data_queue.get(block=True)`（faulthandler 定位，这是最难的一坑）。
+- **启动**：`python rl_scripts/run_sac_pusht.py --config_path rl_configs/sac_pusht_smoke.json --clean`；预设 smoke(600)/short(3000)/full(10 万)；评估 `python rl_scripts/eval_sac_pusht.py --checkpoint <dir> --n-episodes 3 --outdir outputs/eval/x`
+- **冒烟结果**：800 优化步 ~20 步/s；checkpoint 000200/000400/000600/000800；评估 ep0 覆盖率 26.6%（证明管线有效，正式训练需长跑）
 
 ## 常用命令
 
@@ -58,4 +70,5 @@
 - 2026-08-17：**数据集下载完成**（`lerobot/libero` 1.9GB，HF 需走代理 HTTP_PROXY=127.0.0.1:7897）；结构学习（Notebook 01）
 - 2026-08-17：**训练+评估冒烟全部通过**（50 步训练 4.6 step/s；1 局评估 33.7s）；完整闭环在 Windows 验证成功
 - 2026-08-17：**预训练权重推理**——ACT 两枚（0/10、0/1，弱权重）
+- 2026-08-18：**SAC on PushT RL 全链路打通**（HILSerl learner+actor 驱动 gym-pusht；5 个 Windows 补丁；600 步冒烟出 checkpoint 000200-000800；评估 ep0 覆盖率 26.6%）
 - 2026-08-17：**SmolVLA 官方模型评估成功：80% 成功率（4/5）**——基础模型经 hf-mirror（36MB/s）下载并注入缓存；VLA 学习闭环打通

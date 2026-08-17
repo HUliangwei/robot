@@ -1,0 +1,62 @@
+{
+  "job_name": "sac_pusht_smoke",
+  "env": {
+    "type": "pusht",
+    "task": "PushT-v0",
+    "fps": 10,
+    "episode_length": 200,
+    "obs_type": "pixels_agent_pos",
+    "render_mode": "rgb_array",
+    "observation_height": 96,
+    "observation_width": 96,
+    "visualization_width": 384,
+    "visualization_height": 384
+  },
+  "policy": {
+    "type": "gaussian_actor",
+    "device": "cuda",
+    "storage_device": "cuda",
+    "push_to_hub": false,
+    "freeze_vision_encoder": false,
+    "online_steps": 600,
+    "online_step_before_learning": 40,
+    "online_buffer_capacity": 50000,
+    "offline_buffer_capacity": 10000,
+    "dataset_stats": {
+      "observation.image": {
+        "mean": [0.485, 0.456, 0.406],
+        "std": [0.229, 0.224, 0.225]
+      },
+      "observation.state": {
+        "min": [0.0, 0.0],
+        "max": [512.0, 512.0]
+      },
+      "action": {
+        "min": [256.0, 256.0],
+        "max": [512.0, 512.0]
+      }
+    },
+    "concurrency": {
+      "actor": "threads",
+      "learner": "threads"
+    },
+    "actor_learner_config": {
+      "learner_host": "127.0.0.1",
+      "learner_port": 50051,
+      "policy_parameters_push_frequency": 4,
+      "queue_get_timeout": 2
+    }
+  },
+  "algorithm": {
+    "type": "sac",
+    "utd_ratio": 1,
+    "policy_update_freq": 1
+  },
+  "output_dir": "outputs/train/sac_pusht_smoke",
+  "steps": 600,
+  "batch_size": 64,
+  "save_freq": 200,
+  "log_freq": 50,
+  "seed": 1000,
+  "wandb": { "enable": false }
+}

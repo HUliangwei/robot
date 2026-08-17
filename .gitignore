@@ -1,5 +1,5 @@
 # ============ 重型/不可推送内容 ============
-# conda 环境（6.4GB）、数据集缓存（411MB）、MuJoCo 二进制（44MB）
+# conda 环境（~4GB）、数据集缓存（~11GB）、MuJoCo 二进制（44MB）
 envs/
 datasets/
 tool/
@@ -27,5 +27,9 @@ __pycache__/
 Thumbs.db
 gui/.runs/
 
-# LIBERO �������ã�������·����
+# LIBERO 本机配置（含绝对路径）
 workspace/libero/.libero/
+
+# ============ RL 运行瞬时产物 ============
+workspace/libero/rl_configs/generated/
+workspace/libero/rl_scripts/logs/
