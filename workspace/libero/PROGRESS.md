@@ -18,8 +18,9 @@
 | 学习 Notebook | ✅ | `notebooks/01_LIBERO_环境与数据学习.ipynb`（环境+数据+闭环骨架+训练/评估命令） |
 | **ACT 训练冒烟** | ✅ **通过** | 50 步全管线 OK（~4.6 step/s，checkpoint 已存） |
 | **评估冒烟** | ✅ **通过** | 1 局闭环 OK（成功 0% 符合预期=未训练；Windows 需 `--env.max_parallel_tasks=1 --eval.use_async_envs=false`） |
-| ACT 正式训练 | ⏳ 待做（待用户定预算） | LIBERO-Spatial：10k≈1-2h / 25k≈3-6h / 50k≈6-10h |
-| SmolVLA（VLA 学习） | ⏳ 待做 | 视觉+语言指令→动作 |
+| **预训练权重推理** | ✅ 流程跑通 | ishandotsh ACT：10 局 0/10（机器人真实运动，权重弱）；Deepkar ACT：spatial 0/1；SmolVLA：管线就绪（基础模型下载中） |
+| ACT 正式训练 | ⏳ 待做（用户暂定用预训练权重，不训练） | LIBERO-Spatial：10k≈1-2h / 25k≈3-6h |
+| SmolVLA（VLA 学习） | 🔄 准备中 | 基础模型 SmolVLM2-500M 下载受网络限制（curl 断点续传中） |
 
 ## 环境验证记录
 
@@ -39,8 +40,10 @@
 - [x] ~~数据集结构了解~~ ✅（Notebook 01 已记录）
 - [x] ~~ACT 冒烟训练（50 步）~~ ✅ 2026-08-17（4.6 step/s，checkpoint 已存）
 - [x] ~~评估冒烟（1 局）~~ ✅ 2026-08-17（Windows 需 max_parallel_tasks=1 + use_async_envs=false）
-- [ ] ACT 正式训练 LIBERO-Spatial（待用户定预算：10k/25k/50k 步）
-- [ ] 评估：ACT checkpoint 在 LIBERO-Spatial task0 的成功率
+- [x] ~~预训练 ACT 权重推理~~ ✅ 2026-08-17（ishandotsh 0/10 / Deepkar 0/1，均为弱权重；流程本身验证 OK）
+- [ ] SmolVLA 官方模型评估（基础模型 SmolVLM2 下载中；注意：评估与下载不可并行，会互相卡网络）
+- [ ] 排查 libero_10 套件评估挂起问题（spatial 正常，libero_10 挂）
+- [ ] ACT 正式训练（可选，用户暂定不训练）
 - [ ] 进阶 SmolVLA 教程（lerobot 文档：smolvla）
 
 ## 常用命令
@@ -53,3 +56,4 @@
 - 2026-08-17：**环境验证通过**——egl_probe stub + --no-deps + robosuite Windows 补丁（固化到 setup_windows_patches.py）；`verify_env.py` exit 0
 - 2026-08-17：**数据集下载完成**（`lerobot/libero` 1.9GB，HF 需走代理 HTTP_PROXY=127.0.0.1:7897）；结构学习（Notebook 01）
 - 2026-08-17：**训练+评估冒烟全部通过**（50 步训练 4.6 step/s；1 局评估 33.7s）；完整闭环在 Windows 验证成功
+- 2026-08-17：**预训练权重推理**——ACT 两枚（0/10、0/1，弱权重）；SmolVLA 依赖装好（transformers 5.5.4），基础模型下载受网络限制（curl 续传方案），libero_10 评估挂起待排查
