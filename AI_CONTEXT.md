@@ -89,6 +89,12 @@ python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
 2. **不入库**：`envs/ datasets/ tool/ archives/`、`*.safetensors`、`**/checkpoints/`、`**/outputs/train/`（权重超 GitHub 100MB 限制）。
 3. **换对话接续**：新对话 → 读本文件 → 读 `workspace/embodied_learning/PROGRESS.md` → 继续。
 4. **改文件前先读**；命令优先用 `envs\lerobot-win\python.exe`。
+5. **HF 下载经验（2026-08-17，重要）**：
+   - HF 下载也需代理：`$env:HTTP_PROXY="http://127.0.0.1:7897"; $env:HTTPS_PROXY=...`
+   - `snapshot_download`/`hf_hub_download` 会间歇性卡死（xet/连接问题）；大文件改用 `curl -L --proxy http://127.0.0.1:7897 -C - -o <file> https://huggingface.co/<repo>/resolve/main/<file>`
+   - 必要时 `HF_HUB_DISABLE_XET=1`（有的仓库禁用后反而快）
+   - **下载与评估/训练不可并行**（会互相卡网络导致评估挂起）
+   - 注意仓库总大小：SmolVLM2-500M-Instruct 仓库 7.9GB（含 5GB ONNX），只需 model.safetensors + 配置文件
 
 ## 7. 下一步 / 待办（2026-08-17）
 
