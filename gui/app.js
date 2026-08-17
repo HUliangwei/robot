@@ -168,5 +168,11 @@ $("#nav-ai").onclick = (e) => {
     $("#progress-view").innerHTML = md(t);
   });
 };
+$("#nav-shutdown").onclick = async (e) => {
+  e.preventDefault();
+  if (!confirm("确定关闭本地 GUI 服务？关闭后需重新运行 python gui/server.py 启动。")) return;
+  try { await fetch("/api/shutdown"); } catch (err) { /* server already gone */ }
+  document.body.innerHTML = '<div style="padding:3rem;font-family:Microsoft YaHei"><h2>服务已关闭</h2><p>可关闭此标签页，或重新运行 <code>python gui/server.py</code> 再次启动。</p></div>';
+};
 
 loadProjects();

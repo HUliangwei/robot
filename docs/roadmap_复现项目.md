@@ -56,3 +56,39 @@ ManiSkill（若对 GPU 并行 RL 好奇）
 
 - [ ] 是否以 **LIBERO** 为下一个项目？（我可以按本工作流模板为其建 `workspace/libero/` 项目骨架）
 - [ ] 更想先学 **VLA**（SimplerEnv/OpenVLA）还是 **模仿学习基线对比**（robomimic）？
+
+---
+
+## 补充：LIBERO 是什么 + VLA 学习路线（2026-08-17 追加）
+
+### LIBERO 是什么
+
+**LIBERO 不是模型，是「任务基准 + 数据集」**（LifeLong Robot Learning Benchmark）：
+
+- 内容：**130 个桌面机械臂操作任务**，4 个套件——LIBERO-Spatial（空间泛化）/ LIBERO-Object（物体泛化）/ LIBERO-Goal（目标泛化）/ LIBERO-100（长期任务，100 个）；
+- 环境：模拟厨房，**Franka 机械臂，MuJoCo 物理引擎**（与你的 PushT 同一引擎）；
+- 数据：官方提供**专家示范数据集**（HF 可下载），观测 = 3 视角图像 + 机器人状态，动作 = 7-DoF + 夹爪；
+- 用法：在数据集上训练模仿学习策略（ACT / BC-Transformer / Diffusion Policy 等），然后在仿真里评估成功率；
+- 与你生态的契合：**LeRobot 0.6.1 已内置 LIBERO 环境**（`lerobot/envs/libero.py`），可直接 `--env.type=libero` 训练/评估——框架零改动。官方文档：https://github.com/huggingface/lerobot/blob/main/docs/source/libero.mdx
+
+### VLA（Vision-Language-Action）是什么
+
+**VLA = 把 LLM/VLM 的视觉-语言理解接到动作输出**：输入（图像 + 语言指令）→ 输出（机器人动作）。代表：
+
+| 模型 | 参数量 | 特点 | 你的 8GB 显卡 |
+|---|---|---|---|
+| RT-2 | ~55B | Google 首创，闭源 | ❌ 不可能 |
+| OpenVLA | 7B | 开源最流行，动作 token 化 | ⚠️ 需量化 + 极紧（~18GB 才舒服） |
+| Pi-0 | 3B | 流式动作，物理灵巧 | ⚠️ 紧（可量化尝试） |
+| **SmolVLA** | ~0.5-1.6B | **LeRobot 官方支持**，轻量开源 | ✅ 最现实 |
+
+### 建议的 VLA 学习路线（由轻到重）
+
+```
+1. 现在：LIBERO + ACT（沿用 PushT 技能，动作=关节位置，理解模仿学习） ✅ 可行
+2. 下一步：LIBERO + SmolVLA（第一个真正的 VLA：视觉+语言指令→动作；LeRobot 文档有教程） ✅ 本机可行
+3. 进阶：OpenVLA（需 >16GB 显存：云 GPU / 量化推理 / 或换卡）
+4. 前沿：Pi-0 / RT-2 论文精读（不一定要本机跑）
+```
+
+> 关键认知：**VLA 的难点在「多模态理解 + 动作生成」的联合训练与数据规模**，但推理原理仍是 `obs + 指令 → 策略 → action`——你已掌握的闭环框架直接适用。

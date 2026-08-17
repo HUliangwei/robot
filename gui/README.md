@@ -22,6 +22,18 @@ python gui/server.py --no-browser
 | 产出浏览 | 各项目 `outputs/` 下的视频/图表自动列成画廊 |
 | 推理报告 | 内嵌 `docs/inference_report.html` |
 
+## 关闭服务
+
+三种方式：
+1. **界面按钮**：左侧「⏻ 关闭服务」（推荐，优雅关闭）
+2. **Ctrl+C**：前台运行时的终端里按 Ctrl+C
+3. **结束进程**：任务管理器结束对应的 `python.exe`（若后台启动）
+
+```bash
+# 需要时再次启动
+python gui/server.py
+```
+
 ## 端口说明
 
 - **8765 被 Videoto3D 占用**（`gui/control/server/launcher.py` 默认 port=8765）

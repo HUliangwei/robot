@@ -29,6 +29,7 @@ os.makedirs(RUNS_DIR, exist_ok=True)
 runs = {}          # run_id -> {"proc", "log", "started"}
 run_lock = threading.Lock()
 ARTIFACT_EXTS = (".mp4", ".gif", ".png", ".jpg")
+SERVER = None      # set in main(); used by /api/shutdown
 
 
 def find_projects():
@@ -189,6 +190,15 @@ class Handler(BaseHTTPRequestHandler):
                 data = open(fp, "rb").read().replace(b'<img src="viz/', b'<img src="/proj/_/doc/viz/')
                 return self._send(200, data, "text/html; charset=utf-8")
             return self._send(404, "no report", "text/plain")
+        if u.path == "/api/shutdown":
+            def _stop():
+                time.sleep(0.3)
+                try:
+                    SERVER.shutdown()
+                except Exception:
+                    pass
+            threading.Thread(target=_stop, daemon=True).start()
+            return self._send(200, json.dumps({"ok": True, "msg": "服务即将关闭"}))
         return self._send(404, "not found", "text/plain")
 
     def do_POST(self):
@@ -228,6 +238,7 @@ def main():
     args = ap.parse_args()
 
     # auto-avoid busy ports (Videoto3D uses 8765; try start..start+19)
+    global SERVER
     port = args.port
     srv = None
     for p in range(port, port + 20):
@@ -240,6 +251,7 @@ def main():
     if srv is None:
         print(f"error: no free port in [{port}, {port + 19}]", flush=True)
         return
+    SERVER = srv
 
     url = f"http://127.0.0.1:{port}"
     print(f"robot GUI: {url}  (Videoto3D 默认占用 8765，本服务自动避让)", flush=True)
