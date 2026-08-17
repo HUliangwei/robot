@@ -26,3 +26,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 gui/.runs/
+
+# LIBERO 本机配置（含绝对路径）
+workspace/libero/.libero/

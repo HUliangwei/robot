@@ -49,3 +49,19 @@ th { background: #f5f8fb; }
 .console-head span { flex: 1; font-size: .85rem; }
 .console-head button { padding: .25rem .6rem; font-size: .75rem; background: #555; }
 #console-body { flex: 1; margin: 0; padding: .6rem .8rem; overflow: auto; color: #d4d4d4; font-size: .78rem; white-space: pre-wrap; word-break: break-all; }
+
+/* ---- file browser ---- */
+.file-group { margin: .3rem 0; }
+.file-group summary { cursor: pointer; font-weight: 600; font-size: .9rem; padding: .25rem 0; color: var(--acc); }
+.file-list { list-style: none; margin: .2rem 0 .6rem; padding: 0; max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.file-list li { border-bottom: 1px solid var(--line); }
+.file-list li:last-child { border-bottom: 0; }
+.file-list a { display: flex; justify-content: space-between; align-items: center; padding: .45rem .7rem; text-decoration: none; color: var(--text); font-size: .85rem; font-family: Consolas, monospace; }
+.file-list a:hover { background: #eef3f8; }
+.file-list .fsize { color: var(--muted); font-size: .75rem; margin-left: .6rem; }
+pre.code { background: #f6f8fa; border: 1px solid var(--line); border-radius: 6px; padding: .9rem; overflow: auto; max-height: 70vh; font-size: .82rem; line-height: 1.5; }
+aside .nav-sep { font-size: .75rem; color: var(--muted); padding: .5rem .6rem .2rem; text-transform: uppercase; letter-spacing: .05em; }
+aside .nav { margin-top: .4rem; }
+aside .nav + .nav { border-top: 1px solid var(--line); padding-top: .4rem; }
+aside .danger { color: #c62828; }
+#global-files li a { font-size: .82rem; }

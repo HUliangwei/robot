@@ -46,15 +46,26 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 
 ## 4. 状态快照（2026-08-17）
 
-**PushT 主线：全部核心目标完成** ✅
+**小项目 1：PushT（embodied_learning）— 主线完成，物理保真已修复** ✅
 - 自建 MuJoCo PushT 环境（语义与 gym_pusht 1:1 对齐）✅
 - 双环境（官方 pymunk / MuJoCo）ACT 闭环推理跑通 ✅
 - 自训 ACT 25k 步（l1=0.12，用户要求停止训练）✅
-- 文档/可视化/GitHub 推送 ✅（remote: main @ 见 git log）
+- 文档/可视化/GitHub 推送 ✅
+- 小项目 README（个人网站展示用）+ PROGRESS（含残余问题记录）✅
 
-**关键结果**：**官方环境成功已复现**——社区 aadarshram ACT @seed1000 ep0 覆盖率 0.9534（>0.95，134 步完成，成功率 1/5）；MuJoCo 环境最高 0.865（pymunk↔MuJoCo 接触动力学差异导致小幅迁移差距）。自训 25k 与社区权重水平相当；均未达高成功率（欠训练，与管线无关）。
+**小项目 2：LIBERO（workspace/libero/）— 已立项** 🚧
+- 骨架（README/PROGRESS/commands/verify_env.py）✅
+- `pip install libero` 原生失败（egl_probe 无 Windows wheel）→ 已用 **egl_probe stub + --no-deps** 方案安装 robosuite 1.4.0 / robomimic 0.2.0 / libero 0.1.1（安装中）
+- 注意：LIBERO 官方仅支持 Linux；Windows 用 stub 方案可跑通导入（robomimic 只在 EGL 渲染路径懒加载 egl_probe）
 
-**「推动后立刻停下」物理修复（2026-08-17）**：用户对比视频发现官方环境推完即停、MuJoCo 却一直滑/转。定量诊断定位到根因——T 块 COM 在推点下方，每次推都是偏心踢击；pymunk 刚性接触瞬间耗散踢击能量，MuJoCo 软接触不耗散导致块绕推头圆柱持续旋转飞走（偏心推旋转 62.7° vs 官方 10.4°）。修复：块关节 damping=5 + agent/块摩擦 2 + 墙摩擦 0（对齐 pymunk）。修复后偏心推旋转 13.1°、推完立刻静止；rollout 奖励总和 10.75→21.93（+104%，块能停住保持覆盖率），成功率仍 0/10（0.95 上限是策略/像素迁移剩余差异）。详见 `note/04_MuJoCo_PushT_复现总结.md` §3.6。
+**结构整理**：删除空目录（notes/datasets/examples/models/.vscode）、陈旧 rollout（rollout_mujoco/rollout_official*/lemon/smoke）、顶层 outputs/my_rollout；保留证据视频与权重。
+**GUI 升级**：新增「全部文件」浏览（项目内所有文件可查看：md/ipynb/代码/媒体）+ 全局 README/笔记/文档导航；修复 AI_CONTEXT 导航链接（原路径 404）。
+
+**关键结果**：**官方环境成功已复现**——社区 aadarshram ACT @seed1000 ep0 覆盖率 0.9534（>0.95，134 步完成，成功率 1/5）；MuJoCo 环境最高 0.865。自训 25k 与社区权重水平相当；均未达高成功率（欠训练，与管线无关）。
+
+**「推动后立刻停下」物理修复（2026-08-17）**：用户对比视频发现官方环境推完即停、MuJoCo 却一直滑/转。定量诊断定位到根因——T 块 COM 在推点下方，每次推都是偏心踢击；pymunk 刚性接触瞬间耗散踢击能量，MuJoCo 软接触不耗散导致块绕推头圆柱持续旋转飞走（偏心推旋转 62.7° vs 官方 10.4°）。修复：块关节 damping=5 + agent/块摩擦 2 + 墙摩擦 0（对齐 pymunk）。修复后偏心推旋转 13.1°、推完立刻静止；rollout 奖励总和 10.75→21.93（+104%，块能停住保持覆盖率），成功率仍 0/10。详见 `note/04_MuJoCo_PushT_复现总结.md` §3.6。
+
+**残余旋转（未解决，已记录）**：真实策略 rollout 中 MuJoCo 块仍比官方转得多（累计 380° vs 56°，自旋事件 80 vs 12）。已排除：惯量 3000（更差 412°）、接触刚度 solref、时间步、推得更狠、elliptic 摩擦锥+μ3（更差 776°）。结论为 MuJoCo 软接触模型与 pymunk 刚性接触的整体差异，单点参数不敏感；完整记录在 `workspace/embodied_learning/PROGRESS.md`。
 
 ## 5. 常用入口命令
 
@@ -78,8 +89,9 @@ python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
 
 ## 7. 下一步 / 待办（2026-08-17）
 
+- [ ] LIBERO：完成 libero 栈安装验证（`python workspace/libero/verify_env.py`）→ 下载数据集 → ACT 训练
+- [ ] （物理待续）PushT MuJoCo 残余旋转：试 solimp 曲线 / 或接受差异专注策略侧
 - [ ] 达成 >95% PushT 成功（官方配方 batch8 + 60-80k 步 / 或 gated `lerobot/act_pusht`）
-- [ ] 启动 **LIBERO** 项目（见 docs/roadmap_复现项目.md，待用户确认）
 - [ ] 网页端策略服务化（FastAPI 骨架见 docs/工作流 §6）
 - [ ] gui 仪表盘后续增强（如在线 rollout 流式预览）
 
@@ -87,3 +99,4 @@ python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
 
 - 2026-08-17：创建；PushT 主线完成、GitHub 推送、gui/docs/AI_CONTEXT 建立
 - 2026-08-17：§4 追加「推动后立刻停下」物理修复（块关节阻尼 5 + 摩擦对齐 pymunk），详见 note 04 §3.6
+- 2026-08-17：LIBERO 立项（骨架 + egl_probe stub 安装方案）；文件结构整理（删空目录/陈旧 rollout）；GUI 升级（文件浏览 + 全局导航）；残余旋转诊断记录（排除 5 类假设）

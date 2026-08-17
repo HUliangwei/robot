@@ -1,52 +1,47 @@
 # 🤖 robot — LeRobot × MuJoCo 具身智能学习项目
 
-> **把 LeRobot 官方 PushT 任务在 MuJoCo 中复现推理**：从数据集、ACT 训练到双环境（pymunk 2D 官方 / 自建 MuJoCo）闭环推理的完整工作区。
+> **把 LeRobot 官方 PushT 任务在 MuJoCo 中复现推理**：从数据集、ACT 训练到双环境（pymunk 2D 官方 / 自建 MuJoCo）闭环推理的完整工作区；并以此为跳板向 3D 机械臂操作（LIBERO）与 VLA 模型进阶。
 
-## ✨ 核心成果
+## ✨ 小项目一览
 
-- ✅ **自建 MuJoCo PushT 环境**：`workspace/embodied_learning/mujoco_basics/pusht/`
-  - `pusht_mujoco.xml` — 推块 + T块 + 墙 + 目标区 + 俯视相机
-  - `mujoco_pusht_env.py` — gymnasium 封装，与 `gym_pusht/PushT-v0` 观测/动作/奖励 **1:1 兼容**
-  - `run_pusht_rollout.py` — 闭环推理脚本（官方 / MuJoCo 通用，支持本地 checkpoint）
-- ✅ **双环境闭环推理跑通**：同一份 ACT 权重在两个物理引擎上推理，覆盖率分布一致（语义对齐验证）
-- ✅ **自训 ACT**：`outputs/train/act_pusht_real/`（25k 步 checkpoint，loss 收敛至 l1=0.12）
-- ✅ **完整文档 + 可视化**：见 `docs/`（工作流说明、自包含 HTML 报告、图表、对比视频）
+| 小项目 | 一句话 | 状态 |
+|---|---|---|
+| **embodied_learning**（PushT） | 2D 推块任务在自建 MuJoCo 中的完整复现（数据→ACT→双环境推理） | ✅ 主线完成，物理保真已修复 |
+| **libero**（LIBERO 基准） | Franka + MuJoCo 桌面操作，ACT → SmolVLA 的 VLA 学习路线 | 🚧 已立项（骨架 + 环境安装中） |
 
 ## 🚀 快速开始
 
 ```bash
-# 1. 环境自检（MuJoCo 环境随机走 50 步）
+# 1. 本地仪表盘（网页端：进度 / 命令 / 视频 / 文件浏览）
+python gui/server.py                 # 打开 http://127.0.0.1:8766（自动避让 8765）
+
+# 2. PushT 环境自检
 python workspace/embodied_learning/mujoco_basics/pusht/mujoco_pusht_env.py
 
-# 2. 官方 2D 环境推理（社区权重）
+# 3. PushT 推理（官方 / MuJoCo，社区权重）
 python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
     --env official --n_episodes 3 --policy-path aadarshram/act_pusht \
     --outdir workspace/embodied_learning/outputs/rollout_official
 
-# 3. MuJoCo 环境推理（本地自训权重）
-python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
-    --env mujoco --n_episodes 3 \
-    --policy-path workspace/embodied_learning/outputs/train/act_pusht_real/checkpoints/025000/pretrained_model \
-    --outdir workspace/embodied_learning/outputs/rollout_mujoco
+# 4. LIBERO 环境自检（首次需安装 libero 栈，见 workspace/libero/）
+python workspace/libero/verify_env.py
 ```
 
 ## 📁 项目结构
 
 ```
 robot/
-├── docs/                     工作流文档 + 可视化报告（浏览器直接打开 inference_report.html）
-├── note/                     学习笔记 01-04
-├── workspace/embodied_learning/
-│   ├── lerobot_basics/       01-07 学习 Notebook（07 = MuJoCo 模型搭建 + ACT 推理）
-│   ├── mujoco_basics/pusht/  自建 MuJoCo 环境（核心代码）
-│   ├── outputs/              rollout 视频/指标 + 训练 checkpoint（权重不入库）
-│   └── environment/          conda/pip 环境清单
-├── envs/                     本地 conda 环境（不入库）
-├── datasets/                 HF 数据集/权重缓存（不入库）
-└── tool/                     MuJoCo 二进制（不入库）
+├── gui/                     本地网页仪表盘（server.py + 前端，零依赖）
+├── docs/                    工作流文档 + 可视化报告（inference_report.html）
+├── note/                    跨项目学习笔记 01-04（算法分类 / 工具 / 闭环流程 / PushT 总结）
+├── workspace/               小项目区（每个 = README 介绍 + PROGRESS 进度 + commands 命令）
+│   ├── embodied_learning/   PushT 小项目（README 展示卡片 + notebooks + MuJoCo 环境 + outputs）
+│   └── libero/               LIBERO 小项目（README + 环境验证脚本）
+├── envs/  datasets/  tool/  本地环境 / HF 缓存 / MuJoCo 二进制（不入库）
+└── archives/                （预留）
 ```
 
-## 📊 结果速览
+## 📊 PushT 结果速览
 
 | 权重 | 官方 mean/max 覆盖率 | MuJoCo mean/max |
 |---|---|---|
@@ -54,26 +49,23 @@ robot/
 | 社区 Lemon-03 ACT | 0.41 / 0.93 | — |
 | 自训 ACT（25k 步） | 0.39 / 0.82 | 0.36 / 0.62 |
 
-> ✅ **官方环境成功已复现**：社区 aadarshram ACT 在 seed 1000 第 1 局达到覆盖率 0.9534（>0.95），134 步提前完成（成功率 1/5）。
-> MuJoCo 环境最高 0.865（pymunk→MuJoCo 物理差异导致的小幅迁移差距，已文档化，见 note/04）。
-> 自训 25k 权重与社区水平相当；达到更高成功率需官方配方（batch 8 + 60-80k 步）或官方 `lerobot/act_pusht`。
+> ✅ **官方环境成功已复现**：aadarshram ACT @seed1000 覆盖率 **0.9534**（134 步完成）。
+> 🔧 **物理保真修复**：修复"推完不立即停下"（块关节阻尼 5 + 摩擦对齐 pymunk），rollout 奖励总和 +104%。
+> ⚠️ **已知残余问题**：MuJoCo 真实 rollout 中块仍比官方转得多（累计 380° vs 56°），已记录于 `workspace/embodied_learning/PROGRESS.md`（含已排除假设与下一步）。
 
 ## 📖 学习路径
 
 1. `note/01_机器人算法模型总结分类.md` — 算法地图
-2. Notebook 01-03 — 数据结构 / 训练流程 / MuJoCo 概念
-3. Notebook 05A / 06 — ACT 源码解析 + 训练推理全流程
-4. **Notebook 07 — MuJoCo PushT 模型搭建与 ACT 推理（本项目的核心产出）**
-5. `note/04_MuJoCo_PushT_复现总结.md` — 踩坑记录速查
+2. `workspace/embodied_learning/lerobot_basics/` Notebook 01-07（07 = MuJoCo PushT 模型搭建 + ACT 推理，核心产出）
+3. `note/04_MuJoCo_PushT_复现总结.md` — 踩坑速查（10 条）
+4. `docs/roadmap_复现项目.md` — LIBERO 调研 + VLA 学习路线（ACT → SmolVLA → OpenVLA）
 
 ## 🔧 环境要求
 
 - Windows + conda 环境 `lerobot-win`（清单见 `workspace/embodied_learning/environment/`）
-- 关键版本：lerobot 0.6.1 / torch 2.11+cu128 / mujoco 3.11.0 / gym-pusht 0.1.6 / **pymunk 6.8.0**
-- GPU：CUDA 可用即可（本项目用 RTX 4060 Laptop）
+- 关键版本：lerobot 0.6.1 / torch 2.11+cu128 / mujoco 3.11.0 / gym-pusht 0.1.6 / **pymunk 6.8.0** / libero 0.1.1
+- GPU：RTX 4060 Laptop 8GB（CUDA 可用）
 
 ## ⚠️ 未入库内容（见 .gitignore）
 
-`envs/`（6.4GB conda 环境）、`datasets/`（411MB 缓存）、`tool/`（MuJoCo 二进制）、
-`**/checkpoints/` 与 `*.safetensors`（权重超 GitHub 100MB 限制）。
-需要时从 HF 重新下载或重新训练。
+`envs/`、`datasets/`、`tool/`、`**/checkpoints/`、`*.safetensors`、`**/outputs/train/`（权重/缓存超 GitHub 100MB 限制，需要时从 HF 重新下载或重新训练）。

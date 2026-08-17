@@ -1,0 +1,33 @@
+{
+  "project": "libero",
+  "description": "LIBERO 基准 × LeRobot：Franka+MuJoCo 桌面操作，ACT → SmolVLA",
+  "env": "lerobot-win",
+  "python": "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+  "hf_home": "D:\\Desktop\\robot\\datasets",
+  "commands": [
+    {
+      "name": "环境自检（导入 LIBERO env + 随机步）",
+      "cmd": "python verify_env.py",
+      "cwd": "workspace/libero",
+      "desc": "验证 lerobot.envs.libero 可导入、可实例化任务并随机 step"
+    },
+    {
+      "name": "查看 LIBERO 数据集信息",
+      "cmd": "python -m lerobot.scripts.lerobot_info --dataset.repo_id=lerobot/libero_spatial",
+      "cwd": ".",
+      "desc": "打印 LIBERO-Spatial 数据集结构与统计（首次会自动下载）"
+    },
+    {
+      "name": "训练 ACT（LIBERO-Spatial，示例）",
+      "cmd": "python -m lerobot.scripts.lerobot_train --env.type=libero --env.task=... --dataset.repo_id=lerobot/libero_spatial --policy.type=act --output_dir=outputs/train/libero_act --steps=50000 --batch_size=64 --save_freq=5000 --wandb.enable=false",
+      "cwd": "workspace/libero",
+      "desc": "LIBERO 官方训练命令模板（task 名与超参待环境验证后确认）"
+    },
+    {
+      "name": "查看 lerobot LIBERO 文档",
+      "cmd": "python -c \"print('见 https://github.com/huggingface/lerobot/blob/main/docs/source/libero.mdx')\"",
+      "cwd": ".",
+      "desc": "LeRobot 官方 LIBERO 使用文档"
+    }
+  ]
+}

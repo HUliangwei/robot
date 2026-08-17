@@ -31,6 +31,68 @@ run_lock = threading.Lock()
 ARTIFACT_EXTS = (".mp4", ".gif", ".png", ".jpg")
 SERVER = None      # set in main(); used by /api/shutdown
 
+# directories / extensions excluded from the file browser (heavy weights, caches, vcs)
+FILE_EXCLUDE_DIRS = {"__pycache__", ".git", ".vscode", ".idea", ".runs", ".cache",
+                     "checkpoints", "training_state", "eval_step", "wandb", "runs"}
+FILE_EXCLUDE_EXTS = {".safetensors", ".pyc", ".log", ".pt", ".pth", ".bin", ".onnx"}
+TEXT_EXTS = {".md", ".txt", ".py", ".ipynb", ".xml", ".json", ".yml", ".yaml", ".csv", ".html", ".css", ".js", ".sh", ".toml", ".cfg", ".ini"}
+
+
+def list_files(base, prefix="", max_depth=None):
+    """Return [{path, size}] for all browsable files under base (sorted).
+
+    max_depth: limit recursion depth (1 = only files directly in base).
+    """
+    found = []
+    if not os.path.isdir(base):
+        return found
+    for root, dirs, files in os.walk(base):
+        if max_depth is not None:
+            depth = root[len(base.rstrip(os.sep)) + 1:].count(os.sep) + 1
+            if depth >= max_depth:
+                dirs[:] = []
+        dirs[:] = [d for d in dirs if d not in FILE_EXCLUDE_DIRS]
+        for f in files:
+            ext = os.path.splitext(f)[1].lower()
+            if ext in FILE_EXCLUDE_EXTS:
+                continue
+            fp = os.path.join(root, f)
+            rel = os.path.relpath(fp, base).replace(os.sep, "/")
+            if prefix:
+                rel = prefix + "/" + rel
+            try:
+                size = os.path.getsize(fp)
+            except OSError:
+                size = 0
+            found.append({"path": rel, "size": size, "ext": ext.lstrip(".")})
+    found.sort(key=lambda a: a["path"])
+    return found
+
+
+def safe_join(base, rel):
+    """Join base + rel, rejecting path traversal outside base."""
+    if not rel or rel.startswith("/") or ".." in rel.split("/"):
+        return None
+    fp = os.path.realpath(os.path.join(base, rel))
+    base_r = os.path.realpath(base)
+    if not (fp == base_r or fp.startswith(base_r + os.sep)):
+        return None
+    return fp
+
+
+def content_type_for(fp, ext=None):
+    ext = (ext or os.path.splitext(fp)[1].lower()).lstrip(".")
+    return {
+        "mp4": "video/mp4", "gif": "image/gif", "png": "image/png", "jpg": "image/jpeg",
+        "jpeg": "image/jpeg", "svg": "image/svg+xml", "webp": "image/webp",
+        "html": "text/html; charset=utf-8", "md": "text/markdown; charset=utf-8",
+        "txt": "text/plain; charset=utf-8", "py": "text/x-python; charset=utf-8",
+        "xml": "text/xml; charset=utf-8", "json": "application/json; charset=utf-8",
+        "yml": "text/yaml; charset=utf-8", "yaml": "text/yaml; charset=utf-8",
+        "csv": "text/csv; charset=utf-8", "css": "text/css; charset=utf-8",
+        "js": "application/javascript; charset=utf-8", "ipynb": "application/json; charset=utf-8",
+    }.get(ext, "application/octet-stream")
+
 
 def find_projects():
     projects = []
@@ -137,6 +199,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/project/"):
             name = path.split("/")[3]
             base = os.path.join(WORKSPACE, name)
+            if not os.path.isdir(base):
+                return self._send(404, json.dumps({"error": "no such project"}))
             progress = ""
             pp = os.path.join(base, "PROGRESS.md")
             if os.path.exists(pp):
@@ -149,28 +213,43 @@ class Handler(BaseHTTPRequestHandler):
                 200, json.dumps({"name": name, "progress": progress, "commands": commands,
                                  "artifacts": artifacts_for(name)}, ensure_ascii=False)
             )
+        if path.startswith("/api/project_files/"):
+            name = path.split("/")[3]
+            base = os.path.join(WORKSPACE, name)
+            if not os.path.isdir(base):
+                return self._send(404, json.dumps({"error": "no such project"}))
+            return self._send(200, json.dumps(list_files(base), ensure_ascii=False))
+        if path == "/api/global_files":
+            return self._send(200, json.dumps({
+                "root": list_files(ROBOT, max_depth=1),
+                "note": list_files(os.path.join(ROBOT, "note")),
+                "docs": list_files(DOCS),
+            }, ensure_ascii=False))
         if path.startswith("/proj/"):
-            # serve project outputs / docs statically
-            parts = path.split("/")[2:]  # [name, out|doc, ...]
+            # serve project / repo files statically
+            parts = path.split("/")[2:]  # [name, out|doc|file|root|note, ...]
             name = parts[0]
             kind = parts[1] if len(parts) > 1 else ""
+            rel = "/".join(parts[2:])
             if kind == "out":
-                rel = "/".join(parts[2:])
-                fp = os.path.join(WORKSPACE, name, "outputs", rel)
+                fp = safe_join(os.path.join(WORKSPACE, name, "outputs"), rel)
             elif kind == "doc":
-                rel = "/".join(parts[2:])
-                fp = os.path.join(DOCS, rel)
+                fp = safe_join(DOCS, rel)
+            elif kind == "file":
+                fp = safe_join(os.path.join(WORKSPACE, name), rel)
+            elif kind == "root":
+                fp = safe_join(ROBOT, rel)
+            elif kind == "note":
+                fp = safe_join(os.path.join(ROBOT, "note"), rel)
             else:
                 fp = None
             if fp and os.path.exists(fp) and os.path.isfile(fp):
                 ext = os.path.splitext(fp)[1].lower()
-                ctype = {"mp4": "video/mp4", "gif": "image/gif", "png": "image/png",
-                         "jpg": "image/jpeg", "html": "text/html; charset=utf-8"}.get(ext, "application/octet-stream")
                 with open(fp, "rb") as f:
                     data = f.read()
-                if ext == "html":
+                if ext == ".html":
                     data = data.replace(b'<img src="viz/', b'<img src="/proj/_/doc/viz/')
-                return self._send(200, data, ctype)
+                return self._send(200, data, content_type_for(fp, ext))
             return self._send(404, "not found", "text/plain")
         if path.startswith("/api/run/"):
             run_id = path.split("/")[3]
