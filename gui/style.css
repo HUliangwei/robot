@@ -118,10 +118,10 @@ pre.code { background: #f8fafc; border: 1px solid var(--line); border-radius: 10
 .readme-tag { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; border-bottom: 1px solid var(--line); padding-bottom: .4rem; margin-bottom: .6rem; }
 
 /* ---- live sim panel ---- */
-.live-panel { display: flex; gap: 1rem; flex-wrap: wrap; align-items: flex-start; }
-.live-frame { flex: 1 1 420px; min-width: 300px; }
-.live-frame img { width: 100%; border: 1px solid var(--line); border-radius: 14px; background: #0f1520; }
-.live-meta { flex: 1 1 260px; min-width: 240px; font-size: .8rem; line-height: 1.8; }
+.live-panel { display: flex; gap: 1.2rem; flex-wrap: wrap; align-items: flex-start; }
+.live-frame { flex: 0 1 auto; }
+.live-frame img { display: block; max-width: 320px; max-height: 320px; border: 1px solid var(--line); border-radius: 14px; background: #0f1520; }
+.live-meta { flex: 1 1 240px; min-width: 220px; font-size: .8rem; line-height: 1.8; }
 .live-meta .metric { display: block; }
 
 /* ---- responsive ---- */

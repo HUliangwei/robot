@@ -165,7 +165,8 @@ def main():
             if done:
                 success = bool(info["success"].all() if hasattr(info.get("success"), "all") else info.get("success", False))
             if step % 3 == 0 or done or step == 0:
-                frame = obs["pixels"]["image"][0]
+                # 与策略视角一致：LiberoProcessorStep 会把原始渲染翻转 180°
+                frame = np.flip(obs["pixels"]["image"][0], axis=(0, 1))
                 frames.append(frame)
                 if args.stream_dir:
                     _stream_write(args.stream_dir, step, frame, info)
