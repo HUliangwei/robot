@@ -217,7 +217,8 @@ async function loadProjects() {
     const li = document.createElement("li");
     const a = document.createElement("a");
     a.textContent = p.name;
-    a.onclick = () => openProject(p.name);
+    a.href = "#project=" + encodeURIComponent(p.name);
+    a.onclick = (e) => { e.preventDefault(); openProject(p.name); };
     li.appendChild(a);
     if (p.snippet) {
       const s = document.createElement("div");
@@ -254,40 +255,20 @@ async function openProject(name) {
   const r = await fetch("/api/project/" + encodeURIComponent(name));
   const data = await r.json();
   const wfs = data.workflows || [];
-  mainEl.innerHTML = `<h2>📁 ${esc(name)} <button class="secondary" id="rep-btn" style="margin-left:.6rem;vertical-align:middle">📊 项目报告</button></h2>
-    <div class="card" id="readme-view"></div>
+  // 首页只展示工作流；项目介绍 / PROGRESS / 全部文件 / 产出都收进「📊 项目报告」
+  mainEl.innerHTML = `<h2>📁 ${esc(name)} <button class="secondary" id="rep-btn" style="margin-left:.6rem;vertical-align:middle">📊 项目报告（介绍 / 进度 / 文件 / 指标）</button></h2>
     <div id="workflow-root"></div>
-    <div class="card"><h3>📈 进度（PROGRESS.md）</h3><div id="progress-view">${md(data.progress || "（无 PROGRESS.md）")}</div></div>
-    <div class="card"><h3>📂 全部文件</h3><div id="files"></div></div>`;
+    <div class="card" id="no-wf" style="display:none"><p class="hint">本项目暂无 workflows.json 工作流配置。点右上「📊 项目报告」查看项目介绍、PROGRESS、全部文件与评估指标。</p></div>`;
   $("#rep-btn").onclick = () => projectReport(name);
-  const rm = await fetch("/proj/" + encodeURIComponent(name) + "/file/README.md");
-  if (rm.ok) {
-    const rmd = await rm.text();
-    $("#readme-view").innerHTML = `<div class="readme-tag">📖 项目介绍（README.md）</div>` + md(rmd);
-  } else {
-    $("#readme-view").innerHTML = "";
-  }
 
   // ---- 工作流 ----
   const wroot = $("#workflow-root");
   if (!wfs.length) {
-    wroot.innerHTML = `<div class="card"><h3>🔄 训练-推理工作流</h3><p class="hint">（本项目未配置 workflows.json）</p></div>`;
+    $("#no-wf").style.display = "";
   } else {
     wroot.innerHTML = `<h3 style="margin:.4rem 0 .6rem">🔄 已跑通的训练-推理工作流（${wfs.length}）</h3>` +
       wfs.map((wf) => workflowCardHTML(name, wf)).join("");
     bindWorkflowCards(name, wfs, data.artifacts || []);
-  }
-
-  const filesEl = $("#files");
-  filesEl.innerHTML = '<p class="hint">加载中…</p>';
-  const fr = await fetch("/api/project_files/" + encodeURIComponent(name));
-  const files = await fr.json();
-  if (!files.length) filesEl.innerHTML = '<p class="hint">（无文件）</p>';
-  else {
-    filesEl.innerHTML = fileGroupUI(files);
-    filesEl.querySelectorAll(".file-link").forEach((el) => {
-      el.onclick = (e) => { e.preventDefault(); viewFile(el.dataset.url, el.dataset.name); };
-    });
   }
 }
 
@@ -1258,3 +1239,15 @@ $("#nav-shutdown").onclick = async (e) => {
 
 loadProjects();
 loadGlobalNav();
+
+// URL hash 深链：#project=pusht 直达项目首页（刷新/分享/书签可用）
+function initHashRoute() {
+  const m = location.hash.match(/^#project=(.+)$/);
+  if (m) {
+    const name = decodeURIComponent(m[1]);
+    if (name && !/^[A-Za-z0-9_\-]+$/.test(name)) return;
+    if (name) openProject(name);
+  }
+}
+window.addEventListener("hashchange", initHashRoute);
+initHashRoute();
