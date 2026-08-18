@@ -25,7 +25,7 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 │   └── .runs/              命令运行日志（临时）
 ├── note/                  学习笔记 01-04（04 = PushT 复现总结/踩坑速查）
 ├── workspace/
-│   └── embodied_learning/  小项目：PushT × LeRobot × MuJoCo
+│   └── pusht/  小项目：PushT × LeRobot × MuJoCo
 │       ├── PROGRESS.md      进度记录（AI 会话结束必更新）
 │       ├── commands.json    可运行命令清单（gui 也读取）
 │       ├── lerobot_basics/   Notebook 01-07（07 = MuJoCo 模型搭建 + ACT 推理）
@@ -46,7 +46,7 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 
 ## 4. 状态快照（2026-08-17）
 
-**小项目 1：PushT（embodied_learning）— 主线完成，物理保真已修复** ✅
+**小项目 1：PushT（pusht）— 主线完成，物理保真已修复** ✅
 - 自建 MuJoCo PushT 环境（语义与 gym_pusht 1:1 对齐）✅
 - 双环境（官方 pymunk / MuJoCo）ACT 闭环推理跑通 ✅
 - 自训 ACT 25k 步（l1=0.12，用户要求停止训练）✅
@@ -72,6 +72,8 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 
 **GUI v3 RL 工作台（2026-08-18）**：新增「🎮 强化学习」视图（预设 冒烟/短训/正式 + 高级参数 → 生成配置 → 监督运行 → 训练运行列表 + checkpoint 评估表单 + 实时推流）；「🚀 推理」表单统一化（任务预设 chips 一键填充环境/任务/输出目录，LIBERO 参数收进折叠区）；后端 /api/rl /api/rl_eval /api/rl_runs。
 
+**项目改名 + GUI v4（2026-08-18）**：`embodied_learning` → **`pusht`**（按任务归类）；SAC RL（rl_scripts/rl_configs/冒烟产物）从 libero 并入 pusht（`workspace/pusht/rl_scripts/`、`rl_configs/`、`outputs/train/sac_pusht_smoke/`）。GUI v4：① 项目首页展示**已跑通的训练-推理工作流**（pusht=ACT/SAC，libero=ACT/SmolVLA）——每步含义讲解（workflows.json）+ 可切换最新权重（「用于推理/评估」按钮）+ 对应推理视频 + 命令；② 模型页**两级分类**（模型架构 ACT/SAC/SmolVLA/VLM → 权重实例），权重带**功能注释**（weights.json/内置 KNOWN_REPO_NOTES）+ **时间戳**；③ 强化学习页按 **SAC 流程**（采样→训练→评估）设计训练+推理一体页；④ 项目报告按**工作流分区**（介绍/PROGRESS/全部文件/产出/指标——pusht 现有 19 项评估记录）。数据文件：`pusht/workflows.json`、`pusht/weights.json`、`libero/workflows.json`、`libero/weights.json`。
+
 **结构整理**：删除空目录（notes/datasets/examples/models/.vscode）、陈旧 rollout（rollout_mujoco/rollout_official*/lemon/smoke）、顶层 outputs/my_rollout；保留证据视频与权重。
 **GUI 升级**：新增「全部文件」浏览（项目内所有文件可查看：md/ipynb/代码/媒体）+ 全局 README/笔记/文档导航；修复 AI_CONTEXT 导航链接（原路径 404）；**项目页顶部展示 README 项目介绍**；**命令输出实时流式**（PYTHONUNBUFFERED=1，修复块缓冲导致 GUI 读不到输出的问题）。
 **README 结构化**：两个小项目 README 统一为 7 段式（数据集/模型架构/权重路径/训练入口/推理/仿真与推理示例/分析），GUI 项目页直接渲染，便于学习与个人网站展示。
@@ -81,7 +83,7 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 
 **「推动后立刻停下」物理修复（2026-08-17）**：用户对比视频发现官方环境推完即停、MuJoCo 却一直滑/转。定量诊断定位到根因——T 块 COM 在推点下方，每次推都是偏心踢击；pymunk 刚性接触瞬间耗散踢击能量，MuJoCo 软接触不耗散导致块绕推头圆柱持续旋转飞走（偏心推旋转 62.7° vs 官方 10.4°）。修复：块关节 damping=5 + agent/块摩擦 2 + 墙摩擦 0（对齐 pymunk）。修复后偏心推旋转 13.1°、推完立刻静止；rollout 奖励总和 10.75→21.93（+104%，块能停住保持覆盖率），成功率仍 0/10。详见 `note/04_MuJoCo_PushT_复现总结.md` §3.6。
 
-**残余旋转（未解决，已记录）**：真实策略 rollout 中 MuJoCo 块仍比官方转得多（累计 380° vs 56°，自旋事件 80 vs 12）。已排除：惯量 3000（更差 412°）、接触刚度 solref、时间步、推得更狠、elliptic 摩擦锥+μ3（更差 776°）。结论为 MuJoCo 软接触模型与 pymunk 刚性接触的整体差异，单点参数不敏感；完整记录在 `workspace/embodied_learning/PROGRESS.md`。
+**残余旋转（未解决，已记录）**：真实策略 rollout 中 MuJoCo 块仍比官方转得多（累计 380° vs 56°，自旋事件 80 vs 12）。已排除：惯量 3000（更差 412°）、接触刚度 solref、时间步、推得更狠、elliptic 摩擦锥+μ3（更差 776°）。结论为 MuJoCo 软接触模型与 pymunk 刚性接触的整体差异，单点参数不敏感；完整记录在 `workspace/pusht/PROGRESS.md`。
 
 ## 5. 常用入口命令
 
@@ -90,17 +92,17 @@ robot/  （git 仓库 → github.com/HUliangwei/robot）
 python gui/server.py                # 打开 http://127.0.0.1:8765
 
 # PushT 推理（MuJoCo / 官方）
-python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
+python workspace/pusht/mujoco_basics/pusht/run_pusht_rollout.py \
     --env mujoco --n_episodes 3 --policy-path <权重目录> --outdir outputs/x
 
-# 训练 ACT（完整命令见 workspace/embodied_learning/commands.json）
+# 训练 ACT（完整命令见 workspace/pusht/commands.json）
 ```
 
 ## 6. 重要约束（AI 必读）
 
 1. **git 推送需代理**：仓库配置了 `http.proxy=http://127.0.0.1:7897`（国内访问 GitHub）。
 2. **不入库**：`envs/ datasets/ tool/ archives/`、`*.safetensors`、`**/checkpoints/`、`**/outputs/train/`（权重超 GitHub 100MB 限制）。
-3. **换对话接续**：新对话 → 读本文件 → 读 `workspace/embodied_learning/PROGRESS.md` → 继续。
+3. **换对话接续**：新对话 → 读本文件 → 读 `workspace/pusht/PROGRESS.md` → 继续。
 4. **改文件前先读**；命令优先用 `envs\lerobot-win\python.exe`。
 5. **HF 下载经验（2026-08-17，重要）**：
    - HF 下载也需代理：`$env:HTTP_PROXY="http://127.0.0.1:7897"; $env:HTTPS_PROXY=...`
@@ -126,3 +128,4 @@ python workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py \
 - 2026-08-17：LIBERO 全链路打通（数据/训练/评估冒烟）；SmolVLA 官方模型评估 80% 成功（hf-mirror 下载基础模型 + 注入缓存）
 - 2026-08-17：GUI 命令输出实时流式修复（PYTHONUNBUFFERED）；项目页展示 README；两个小项目 README 结构化（数据/模型/权重/训练/推理/仿真/分析）
 - 2026-08-18：**SAC on PushT RL 全链路打通**（HILSerl learner+actor 驱动 gym-pusht，600 步冒烟出 checkpoint）；新增 5 个 Windows 补丁（RL 相关）；GUI v3（RL 工作台 + 推理表单统一预设）；RL 评估脚本
+- 2026-08-18：**项目归类重构 + GUI v4**——`embodied_learning` 改名 `pusht`，SAC RL 从 libero 并入 pusht；项目首页工作流卡片（ACT/SAC 流程讲解+权重切换+视频+命令）；模型页两级分类+权重注释/时间戳；RL 页按 SAC 流程重设计；项目报告按工作流分区（19 项指标）

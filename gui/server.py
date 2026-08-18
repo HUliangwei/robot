@@ -160,8 +160,56 @@ def scan_datasets():
     return sorted(out, key=lambda d: d["repo_id"])
 
 
+def load_weight_notes(project):
+    """读取项目内可选的 weights.json：{ "group_name": {"note": "...", "desc": "..."} } 用于权重功能注释。"""
+    fp = os.path.join(WORKSPACE, project, "weights.json")
+    if not os.path.exists(fp):
+        return {}
+    try:
+        data = json.load(open(fp, encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def load_workflows(project):
+    """读取项目内可选的 workflows.json（训练-推理工作流清单）。"""
+    fp = os.path.join(WORKSPACE, project, "workflows.json")
+    if not os.path.exists(fp):
+        return []
+    try:
+        data = json.load(open(fp, encoding="utf-8"))
+        wf = data.get("workflows") if isinstance(data, dict) else data
+        return wf if isinstance(wf, list) else []
+    except Exception:
+        return []
+
+
+def _fmt_ts(ts):
+    if not ts:
+        return ""
+    try:
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(ts))
+    except Exception:
+        return ""
+
+
+# 已知 HF 权重的功能注释（按 repo_id；未知的显示「社区/官方权重」）
+KNOWN_REPO_NOTES = {
+    "aadarshram/act_pusht": ("社区 ACT 权重", "官方环境覆盖率 0.9534（已验证）"),
+    "Lemon-03/ACT_PushT_test": ("社区 ACT（测试）", "测试用，效果弱"),
+    "lerobot/diffusion_pusht": ("官方 Diffusion Policy", "扩散策略基线"),
+    "HuggingFaceVLA/smolvla_libero": ("官方 SmolVLA", "LIBERO-Spatial task0 80% 成功"),
+    "ishandotsh/act_libero_spatial_test": ("社区 ACT（测试）", "0/10 弱权重"),
+    "Deepkar/libero-test-act": ("社区 ACT（测试）", "0/1 弱权重"),
+    "HuggingFaceTB/SmolVLM2-500M-Instruct": ("VLM 骨干模型", "SmolVLA 的视觉-语言基础模型"),
+    "HuggingFaceTB/SmolVLM2-500M-Video-Instruct": ("VLM 骨干模型", "视频版 SmolVLM2 骨干"),
+}
+
+
 def scan_models():
     out = []
+    # 1) HF 缓存权重（社区 / 官方）
     for repo_id, snap in hub_dirs("models"):
         cfg_path = os.path.join(snap, "config.json")
         if not os.path.exists(cfg_path):
@@ -173,15 +221,18 @@ def scan_models():
         ptype = cfg.get("type") or cfg.get("policy_type") or "?"
         if ptype == "?" and str(cfg.get("model_type", "")).lower().startswith("smolvlm"):
             ptype = "vlm"  # 基础视觉-语言模型（SmolVLA 的骨干）
-        entry = {
-            "name": repo_id, "source": "hf-cache", "type": ptype, "path": snap,
+        ts = int(os.path.getmtime(snap))
+        note, desc = KNOWN_REPO_NOTES.get(repo_id, ("社区/官方权重", ""))
+        out.append({
+            "name": repo_id, "group": repo_id, "label": "snapshot", "type": ptype, "path": snap,
+            "source": "hf-cache", "note": note, "desc": desc, "ts": ts, "ts_str": _fmt_ts(ts),
             "chunk_size": cfg.get("chunk_size"), "n_obs_steps": cfg.get("n_obs_steps"),
             "vision_backbone": cfg.get("vision_backbone"), "model_id": cfg.get("model_id"),
             "params_M": None, "input_features": list((cfg.get("input_features") or {}).keys()),
-        }
-        out.append(entry)
-    # local trained checkpoints: workspace/*/outputs/train/*/checkpoints/*/pretrained_model
-    for proj in os.listdir(WORKSPACE):
+        })
+    # 2) 本地训练 checkpoint：workspace/*/outputs/train/*/checkpoints/*/pretrained_model
+    for proj in sorted(os.listdir(WORKSPACE)):
+        notes = load_weight_notes(proj)
         tdir = os.path.join(WORKSPACE, proj, "outputs", "train")
         if not os.path.isdir(tdir):
             continue
@@ -198,13 +249,19 @@ def scan_models():
                     cfg = json.load(open(cfg_path, encoding="utf-8"))
                 except Exception:
                     continue
+                ptype = cfg.get("type", "?")
+                n = notes.get(run, {})
+                note = n.get("note") or (f"自训 {ptype.upper()} · {ck} 步" if ck.isdigit() else f"自训 {ptype.upper()} · 最新")
+                ts = int(os.path.getmtime(os.path.join(ckpts, ck)))
                 out.append({
-                    "name": f"{proj}/{run}/{ck}", "source": "local", "type": cfg.get("type", "?"),
-                    "path": pm, "chunk_size": cfg.get("chunk_size"), "n_obs_steps": cfg.get("n_obs_steps"),
+                    "name": f"{proj}/{run}/{ck}", "group": run, "label": ck, "type": ptype,
+                    "path": pm, "source": "local", "note": note, "ts": ts, "ts_str": _fmt_ts(ts),
+                    "desc": n.get("desc", ""),
+                    "chunk_size": cfg.get("chunk_size"), "n_obs_steps": cfg.get("n_obs_steps"),
                     "vision_backbone": cfg.get("vision_backbone"), "model_id": cfg.get("model_id"),
                     "params_M": None, "input_features": list((cfg.get("input_features") or {}).keys()),
                 })
-    return sorted(out, key=lambda m: m["name"])
+    return sorted(out, key=lambda m: (m["type"], m["name"]))
 
 
 def find_metrics():
@@ -256,7 +313,7 @@ def build_train_cmd(b):
     if outdir.startswith(".."):
         raise ValueError("输出目录必须是项目内相对路径（不允许 ..）")
     env_task = (b.get("env_task") or "").strip()
-    project = "libero" if "libero" in dataset else "embodied_learning"
+    project = "libero" if "libero" in dataset else "pusht"
     if project == "libero":
         task_arg = f"--env.type=libero --env.task={env_task or 'libero_spatial'} --env.task_ids=[0] "
         root = "--dataset.root=D:/Desktop/robot/datasets "
@@ -293,8 +350,8 @@ def build_infer_cmd(b):
         raise ValueError("输出目录必须是项目内相对路径（不允许 ..）")
     stream_dir = f"outputs/stream/{int(time.time() * 1000)}"
     if env_kind in ("official", "mujoco"):
-        project = "embodied_learning"
-        cwd = "workspace/embodied_learning/mujoco_basics/pusht"
+        project = "pusht"
+        cwd = "workspace/pusht/mujoco_basics/pusht"
         cmd = (f"python run_pusht_rollout.py --env {env_kind} --n_episodes {episodes} "
                f"--policy-path {policy} --outdir ../../{outdir}")
         if stream:
@@ -327,7 +384,7 @@ RL_PRESETS = {
     "full":  {"episode_length": 300, "online_steps": 100000, "save_freq": 10000, "settle": 60},
 }
 
-_RL_CONFIG_DIR = os.path.join(WORKSPACE, "libero", "rl_configs", "generated")
+_RL_CONFIG_DIR = os.path.join(WORKSPACE, "pusht", "rl_configs", "generated")
 
 
 def build_rl_cmd(b):
@@ -387,12 +444,12 @@ def build_rl_cmd(b):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
     cmd = (f"python rl_scripts/run_sac_pusht.py --config_path rl_configs/generated/{fname} "
            f"--settle_s {p['settle']} --clean")
-    return cmd, "libero", "workspace/libero", f"rl_configs/generated/{fname}", f"outputs/train/{job}"
+    return cmd, "pusht", "workspace/pusht", f"rl_configs/generated/{fname}", f"outputs/train/{job}"
 
 
 def rl_runs_list():
     """列出 RL 训练目录（checkpoints / 优化步数 / episode 奖励）。"""
-    base = os.path.join(WORKSPACE, "libero", "outputs", "train")
+    base = os.path.join(WORKSPACE, "pusht", "outputs", "train")
     out = []
     if not os.path.isdir(base):
         return out
@@ -481,10 +538,10 @@ def artifacts_for(name):
     for root, _, files in os.walk(base):
         for f in files:
             if f.lower().endswith(ARTIFACT_EXTS) and "eval_step" not in root:
-                rel = os.path.relpath(os.path.join(root, f), base)
+                rel = os.path.relpath(os.path.join(root, f), base).replace(os.sep, "/")
                 if "checkpoints" in rel:
                     continue
-                found.append({"name": rel, "url": f"/proj/{name}/out/{rel.replace(os.sep, '/')}"})
+                found.append({"name": rel, "url": f"/proj/{name}/out/{rel}"})
     found.sort(key=lambda a: a["name"])
     return found
 
@@ -564,7 +621,7 @@ class Handler(BaseHTTPRequestHandler):
                 commands = json.load(open(cp, encoding="utf-8")).get("commands", [])
             return self._send(
                 200, json.dumps({"name": name, "progress": progress, "commands": commands,
-                                 "artifacts": artifacts_for(name)}, ensure_ascii=False)
+                                 "artifacts": artifacts_for(name), "workflows": load_workflows(name)}, ensure_ascii=False)
             )
         if path.startswith("/api/project_files/"):
             name = path.split("/")[3]
@@ -911,10 +968,10 @@ class Handler(BaseHTTPRequestHandler):
                 idx = p.find("models--")
                 end = p.find(os.sep, idx)
                 target = p[: end] if end > 0 else p
-            elif "checkpoints" in p and p.startswith(os.path.join(WORKSPACE, "embodied_learning", "outputs")):
+            elif "checkpoints" in p and p.startswith(os.path.join(WORKSPACE, "pusht", "outputs")):
                 # 本地 checkpoint：.../checkpoints/<step>/pretrained_model -> .../checkpoints/<step>
                 target = os.path.dirname(os.path.dirname(p))
-            if target is None or not target.startswith(base_hub) and not target.startswith(os.path.join(WORKSPACE, "embodied_learning", "outputs")):
+            if target is None or not target.startswith(base_hub) and not target.startswith(os.path.join(WORKSPACE, "pusht", "outputs")):
                 return self._send(400, json.dumps({"error": "只允许删除模型缓存或本地 checkpoint"}))
             import shutil
 
@@ -1004,9 +1061,9 @@ class Handler(BaseHTTPRequestHandler):
             if bool(body.get("stream")):
                 cmd += f" --stream-dir {stream_dir}"
             try:
-                run_id = start_run("libero", cmd, "workspace/libero")
-                return self._send(200, json.dumps({"run_id": run_id, "project": "libero", "cmd": cmd,
-                                                   "cwd": "workspace/libero", "out_root": outdir,
+                run_id = start_run("pusht", cmd, "workspace/pusht")
+                return self._send(200, json.dumps({"run_id": run_id, "project": "pusht", "cmd": cmd,
+                                                   "cwd": "workspace/pusht", "out_root": outdir,
                                                    "stream_dir": stream_dir if bool(body.get("stream")) else None}))
             except Exception as e:
                 return self._send(500, json.dumps({"error": str(e)}))

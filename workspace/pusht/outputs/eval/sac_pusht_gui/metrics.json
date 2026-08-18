@@ -1,0 +1,30 @@
+{
+  "checkpoint": "outputs/train/sac_pusht_smoke/checkpoints/last",
+  "n_episodes": 3,
+  "avg_reward": 27.9772,
+  "success_rate": 0.0,
+  "avg_max_coverage": 0.0886,
+  "episodes": [
+    {
+      "episode": 0,
+      "steps": 300,
+      "reward": 83.9315,
+      "max_coverage": 0.2658,
+      "success": false
+    },
+    {
+      "episode": 1,
+      "steps": 300,
+      "reward": 0.0,
+      "max_coverage": 0.0,
+      "success": false
+    },
+    {
+      "episode": 2,
+      "steps": 300,
+      "reward": 0.0,
+      "max_coverage": 0.0,
+      "success": false
+    }
+  ]
+}

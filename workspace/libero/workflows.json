@@ -1,0 +1,68 @@
+{
+  "workflows": [
+    {
+      "id": "act",
+      "icon": "🎯",
+      "name": "ACT 模仿学习",
+      "kind": "imitation",
+      "summary": "LIBERO 桌面操作的行为克隆：从专家演示学习抓放动作。",
+      "steps": [
+        {
+          "title": "① 准备专家演示数据",
+          "meaning": "lerobot/libero 数据集含 1693 条专家演示（273465 帧），双相机 256² + 7 维关节动作 + 语言指令，是模仿学习的『课本』。",
+          "desc": "下载 lerobot/libero 数据集（40 任务，1693 episodes）",
+          "cmd": "python -m lerobot.scripts.lerobot_info --dataset.repo_id=lerobot/libero"
+        },
+        {
+          "title": "② 训练 ACT",
+          "meaning": "行为克隆：视觉(双相机)+状态→Transformer→100 步动作块，最小化与专家动作的 L1 误差。",
+          "desc": "ACT 训练（LIBERO-Spatial task0）",
+          "cmd": "python -m lerobot.scripts.lerobot_train --env.type=libero --env.task=libero_spatial --env.task_ids=[0] --dataset.repo_id=lerobot/libero --policy.type=act --output_dir=outputs/train/libero_act --steps=25000 --batch_size=8 --save_freq=5000 --eval_steps=0 --env_eval_freq=0 --wandb.enable=false"
+        },
+        {
+          "title": "③ 推理 / 评估",
+          "meaning": "加载 checkpoint 在 LIBERO-Spatial 环境跑 N 局，统计成功率。",
+          "desc": "lerobot_eval 评估（Windows 需 max_parallel_tasks=1 + use_async_envs=false）",
+          "cmd": "python -m lerobot.scripts.lerobot_eval --env.type=libero --env.task=libero_spatial --env.task_ids=[0] --env.max_parallel_tasks=1 --eval.use_async_envs=false --eval.batch_size=1 --policy.path=outputs/train/libero_act/checkpoints/last/pretrained_model --eval.n_episodes=10"
+        }
+      ],
+      "weights": [
+        { "path": "outputs/train/libero_act_smoke/checkpoints/last/pretrained_model", "label": "冒烟", "note": "LIBERO ACT 冒烟 50 步" }
+      ],
+      "video_dirs": ["eval/2026-08-18/00-59-39_libero_act"],
+      "match": ["libero_act", "act_libero"]
+    },
+    {
+      "id": "smolvla",
+      "icon": "🤖",
+      "name": "SmolVLA 视觉-语言-动作",
+      "kind": "vla",
+      "summary": "VLA：先理解语言指令，再生成动作——一个模型按指令执行不同任务。",
+      "steps": [
+        {
+          "title": "① 准备骨干模型",
+          "meaning": "SmolVLA 用 SmolVLM2-500M 作视觉+语言骨干，把图像和指令编码成统一 token 序列。",
+          "desc": "下载 SmolVLM2-500M-Instruct 骨干（hf-mirror 更快）",
+          "cmd": "python -c \"from huggingface_hub import snapshot_download; snapshot_download('HuggingFaceTB/SmolVLM2-500M-Instruct')\""
+        },
+        {
+          "title": "② 加载官方权重",
+          "meaning": "官方 SmolVLA 已在 LIBERO 上训练好，直接加载即可推理（无需自训）。",
+          "desc": "HuggingFaceVLA/smolvla_libero 官方权重（评估 80% 成功）",
+          "cmd": "python -c \"from huggingface_hub import snapshot_download; snapshot_download('HuggingFaceVLA/smolvla_libero')\""
+        },
+        {
+          "title": "③ 推理 / 评估",
+          "meaning": "用语言指令（如 pick up the black bowl）让 VLA 在 LIBERO 环境执行并评估成功率。",
+          "desc": "inference_libero.py 闭环推理（实时推流 + 视频 + metrics）",
+          "cmd": "python inference_libero.py --policy-path HuggingFaceVLA/smolvla_libero --task libero_spatial --task-id 0 --n-episodes 5 --outdir outputs/rollout_smolvla"
+        }
+      ],
+      "weights": [
+        { "path": "HuggingFaceVLA/smolvla_libero", "label": "官方 SmolVLA", "note": "LIBERO-Spatial task0 80% 成功" }
+      ],
+      "video_dirs": ["eval/2026-08-18/00-26-39_libero_smolvla", "eval/2026-08-18/00-33-44_libero_smolvla"],
+      "match": ["smolvla", "eval_smolvla"]
+    }
+  ]
+}

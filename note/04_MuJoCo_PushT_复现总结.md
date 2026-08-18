@@ -14,11 +14,11 @@
 
 | 项目 | 位置 |
 |---|---|
-| MuJoCo 模型 | `workspace/embodied_learning/mujoco_basics/pusht/pusht_mujoco.xml` |
-| gymnasium 封装 | `workspace/embodied_learning/mujoco_basics/pusht/mujoco_pusht_env.py` |
-| 推理脚本 | `workspace/embodied_learning/mujoco_basics/pusht/run_pusht_rollout.py` |
-| 学习 Notebook | `workspace/embodied_learning/lerobot_basics/07_MuJoCo_PushT_模型搭建与ACT推理.ipynb` |
-| rollout 结果 | `workspace/embodied_learning/outputs/rollout_*`（含视频） |
+| MuJoCo 模型 | `workspace/pusht/mujoco_basics/pusht/pusht_mujoco.xml` |
+| gymnasium 封装 | `workspace/pusht/mujoco_basics/pusht/mujoco_pusht_env.py` |
+| 推理脚本 | `workspace/pusht/mujoco_basics/pusht/run_pusht_rollout.py` |
+| 学习 Notebook | `workspace/pusht/lerobot_basics/07_MuJoCo_PushT_模型搭建与ACT推理.ipynb` |
+| rollout 结果 | `workspace/pusht/outputs/rollout_*`（含视频） |
 | 权重缓存 | `datasets/hub/models--aadarshram--act_pusht` 等 |
 
 ## 3. 结果

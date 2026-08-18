@@ -1,0 +1,7 @@
+{
+  "libero_act_smoke": { "note": "LIBERO ACT 冒烟", "desc": "50 步验证数据→预处理→模型→反向全链路" },
+  "HuggingFaceVLA/smolvla_libero": { "note": "官方 SmolVLA", "desc": "LIBERO-Spatial task0 80% 成功（4/5）" },
+  "ishandotsh/act_libero_spatial_test": { "note": "社区 ACT（测试）", "desc": "0/10 弱权重" },
+  "Deepkar/libero-test-act": { "note": "社区 ACT（测试）", "desc": "0/1 弱权重" },
+  "HuggingFaceTB/SmolVLM2-500M-Instruct": { "note": "VLM 骨干模型", "desc": "SmolVLA 的视觉-语言基础模型" }
+}

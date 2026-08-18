@@ -45,4 +45,4 @@ python gui/server.py
 1. `PROGRESS.md` — 进度记录（GUI「进度」页读取）
 2. `commands.json` — 命令清单（GUI「命令」页读取；`python` 字段会替换为实际解释器，`hf_home` 会注入环境变量）
 
-模板见 `workspace/embodied_learning/commands.json`。
+模板见 `workspace/pusht/commands.json`。

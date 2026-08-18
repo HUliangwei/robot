@@ -107,6 +107,35 @@ td.small { font-size: .72rem; color: var(--muted); }
 .grp { margin: .4rem 0; }
 .grp summary { cursor: pointer; font-weight: 600; font-size: .92rem; padding: .3rem 0; color: var(--acc-text); }
 .grp-inner { padding-left: .9rem; }
+.grp-sub { font-weight: 400; font-size: .74rem; color: var(--muted); margin-left: .5rem; }
+
+/* ---- 权重表（模型页两级分类） ---- */
+.weights-table { width: 100%; border-collapse: collapse; margin: .4rem 0 .2rem; }
+.weights-table th { text-align: left; font-size: .72rem; color: var(--muted); border-bottom: 2px solid var(--line); padding: .3rem .5rem; }
+.weights-table td { border-bottom: 1px solid var(--line); padding: .32rem .5rem; font-size: .8rem; }
+.weights-table .wlabel { font-family: Consolas, monospace; font-weight: 600; }
+.weights-table .wactions { white-space: nowrap; text-align: right; }
+button.mini { padding: .18rem .5rem; font-size: .72rem; }
+.badge-sac { background: #e8f5e9; color: #2e7d32; }
+
+/* ---- 工作流卡片（项目首页） ---- */
+.wf-card { border-left: 4px solid var(--acc); }
+.wf-head { display: flex; gap: .7rem; align-items: flex-start; margin-bottom: .5rem; }
+.wf-icon { font-size: 1.5rem; }
+.wf-name { font-size: 1.05rem; font-weight: 700; }
+.wf-summary { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
+.wf-steps { display: flex; flex-direction: column; gap: .5rem; margin: .4rem 0 .8rem; }
+.wf-step { border: 1px solid var(--line); border-radius: 12px; padding: .55rem .8rem; background: #fcfdfe; }
+.wf-step-title { font-weight: 600; font-size: .86rem; }
+.wf-meaning { font-size: .78rem; color: #7a5c14; background: #fdf6e3; border-radius: 8px; padding: .3rem .6rem; margin: .3rem 0; }
+.wf-desc { font-size: .78rem; color: var(--muted); }
+.wf-cmd { display: flex; align-items: center; gap: .6rem; margin-top: .35rem; flex-wrap: wrap; }
+.wf-cmd code { background: #f0f3f8; padding: .15rem .4rem; border-radius: 6px; font-size: .74rem; word-break: break-all; flex: 1; }
+.wf-cmd .run-btn { flex: 0 0 auto; }
+.wf-weights { margin: .5rem 0; }
+.wf-weight-meta { font-size: .76rem; color: var(--muted); font-family: Consolas, monospace; word-break: break-all; margin-top: .3rem; }
+.wf-videos { margin-top: .3rem; }
+.rep-wf h4 { margin: .8rem 0 .3rem; }
 
 /* ---- gallery ---- */
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .9rem; }

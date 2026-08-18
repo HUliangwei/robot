@@ -253,11 +253,11 @@ async function openProject(name) {
   document.querySelectorAll("#project-list li").forEach((li) => li.classList.remove("active"));
   const r = await fetch("/api/project/" + encodeURIComponent(name));
   const data = await r.json();
-  mainEl.innerHTML = `<h2>📁 ${name} <button class="secondary" id="rep-btn" style="margin-left:.6rem;vertical-align:middle">📊 项目报告</button></h2>
+  const wfs = data.workflows || [];
+  mainEl.innerHTML = `<h2>📁 ${esc(name)} <button class="secondary" id="rep-btn" style="margin-left:.6rem;vertical-align:middle">📊 项目报告</button></h2>
     <div class="card" id="readme-view"></div>
-    <div class="card" id="progress-view">${md(data.progress || "（无 PROGRESS.md）")}</div>
-    <div class="card"><h3>⚡ 常用命令</h3><div id="commands"></div></div>
-    <div class="card"><h3>🎬 产出（视频 / 图表）</h3><div class="gallery" id="gallery"></div></div>
+    <div id="workflow-root"></div>
+    <div class="card"><h3>📈 进度（PROGRESS.md）</h3><div id="progress-view">${md(data.progress || "（无 PROGRESS.md）")}</div></div>
     <div class="card"><h3>📂 全部文件</h3><div id="files"></div></div>`;
   $("#rep-btn").onclick = () => projectReport(name);
   const rm = await fetch("/proj/" + encodeURIComponent(name) + "/file/README.md");
@@ -267,31 +267,17 @@ async function openProject(name) {
   } else {
     $("#readme-view").innerHTML = "";
   }
-  const cmds = $("#commands");
-  if (!data.commands.length) cmds.innerHTML = '<p class="hint">（无 commands.json）</p>';
-  for (const c of data.commands) {
-    const div = document.createElement("div");
-    div.className = "command";
-    div.innerHTML = `<div class="head"><span class="name">${esc(c.name)}</span></div>
-      <div class="desc">${esc(c.desc || "")}</div><div class="cmdline">${esc(c.cmd)}</div>
-      <div class="runbar"><button class="run-btn">▶ 运行</button></div>`;
-    div.querySelector(".run-btn").onclick = () => runCmd(c.name, name, c.cmd, c.cwd || "");
-    cmds.appendChild(div);
+
+  // ---- 工作流 ----
+  const wroot = $("#workflow-root");
+  if (!wfs.length) {
+    wroot.innerHTML = `<div class="card"><h3>🔄 训练-推理工作流</h3><p class="hint">（本项目未配置 workflows.json）</p></div>`;
+  } else {
+    wroot.innerHTML = `<h3 style="margin:.4rem 0 .6rem">🔄 已跑通的训练-推理工作流（${wfs.length}）</h3>` +
+      wfs.map((wf) => workflowCardHTML(name, wf)).join("");
+    bindWorkflowCards(name, wfs, data.artifacts || []);
   }
-  const gal = $("#gallery");
-  if (!data.artifacts.length) gal.innerHTML = '<p class="hint">（无产出文件）</p>';
-  else {
-    // 按 basename 分组，mp4+gif 成对（浏览器显示 gif）
-    const byStem = {};
-    for (const a of data.artifacts) {
-      const stem = a.name.replace(/\.(mp4|gif)$/i, "");
-      (byStem[stem] = byStem[stem] || []).push({ path: a.name });
-    }
-    for (const group of Object.values(byStem)) {
-      const fig = mediaFigure(name, group);
-      if (fig) gal.appendChild(fig);
-    }
-  }
+
   const filesEl = $("#files");
   filesEl.innerHTML = '<p class="hint">加载中…</p>';
   const fr = await fetch("/api/project_files/" + encodeURIComponent(name));
@@ -305,41 +291,176 @@ async function openProject(name) {
   }
 }
 
+// ---- 工作流卡片 ----
+function workflowCardHTML(project, wf) {
+  const kindBadge = wf.kind === "rl" ? '<span class="badge badge-sac">强化学习</span>'
+    : wf.kind === "vla" ? '<span class="badge badge-vla">VLA</span>'
+    : '<span class="badge badge-act">模仿学习</span>';
+  const steps = (wf.steps || []).map((s, i) => `
+    <div class="wf-step">
+      <div class="wf-step-title">${esc(s.title || ("步骤 " + (i + 1)))}</div>
+      <div class="wf-meaning">💡 含义：${esc(s.meaning || "")}</div>
+      ${s.desc ? `<div class="wf-desc">${esc(s.desc)}</div>` : ""}
+      ${s.cmd ? `<div class="wf-cmd"><code>${esc(s.cmd)}</code><button class="run-btn wf-run" data-cmd="${esc(s.cmd)}" data-cwd="workspace/${esc(project)}">▶ 运行</button></div>` : ""}
+    </div>`).join("");
+  const weights = (wf.weights || []).map((w, i) =>
+    `<option value="${i}">${esc(w.label || w.path)}</option>`).join("");
+  return `<div class="card wf-card" data-wf="${esc(wf.id || "")}">
+    <div class="wf-head"><span class="wf-icon">${esc(wf.icon || "🔄")}</span>
+      <div style="flex:1"><div class="wf-name">${esc(wf.name || wf.id)} ${kindBadge}</div>
+      <div class="wf-summary">${esc(wf.summary || "")}</div></div></div>
+    <div class="wf-steps">${steps}</div>
+    <div class="wf-weights">
+      <div class="form-row"><label>权重切换</label>
+        <select class="wf-wsel">${weights || '<option value="">（无权重）</option>'}</select>
+        <button class="secondary wf-use">🚀 用于推理</button></div>
+      <div class="wf-weight-meta hint"></div>
+    </div>
+    <div class="wf-videos gallery"></div>
+  </div>`;
+}
+function bindWorkflowCards(project, wfs, artifacts) {
+  const cards = [...document.querySelectorAll(".wf-card")];
+  wfs.forEach((wf) => {
+    const card = cards.find((c) => c.dataset.wf === (wf.id || ""));
+    if (!card) return;
+    const ws = wf.weights || [];
+    const sel = card.querySelector(".wf-wsel");
+    const meta = card.querySelector(".wf-weight-meta");
+    const useBtn = card.querySelector(".wf-use");
+    // 步骤里的「运行」按钮
+    card.querySelectorAll(".wf-run").forEach((b) => {
+      b.onclick = () => runCmd(b.dataset.cmd, project, b.dataset.cmd, b.dataset.cwd || "workspace/" + project);
+    });
+    const update = () => {
+      const w = ws[parseInt(sel.value)];
+      if (!w) { meta.textContent = ""; return; }
+      meta.textContent = `${w.note || ""}${w.desc ? " · " + w.desc : ""} — ${w.path}`;
+    };
+    sel.onchange = update;
+    useBtn.onclick = () => {
+      const w = ws[parseInt(sel.value)];
+      if (!w) { alert("无权重"); return; }
+      if (wf.kind === "rl") {
+        const ck = w.path.includes("/checkpoints/") ? w.path.split("/pretrained_model")[0] : w.path;
+        rlEvalDirect(project, ck);
+      } else {
+        inferView(w.path);
+      }
+    };
+    update();
+    const vdirs = wf.video_dirs || [];
+    const vg = card.querySelector(".wf-videos");
+    const cands = artifacts.filter((a) => vdirs.some((d) => a.name.startsWith(d + "/")));
+    if (!cands.length) { vg.innerHTML = '<p class="hint">（该工作流暂无产出视频）</p>'; return; }
+    const byStem = {};
+    for (const a of cands) {
+      const stem = a.name.split("/").pop().replace(/\.(mp4|gif)$/i, "");
+      (byStem[stem] = byStem[stem] || []).push({ path: a.name });
+    }
+    for (const group of Object.values(byStem)) {
+      const fig = mediaFigure(project, group);
+      if (fig) vg.appendChild(fig);
+    }
+  });
+}
+// 从工作流跳转到 RL 评估（直接填入 checkpoint 并展开评估表单）
+function rlEvalDirect(project, checkpointDir) {
+  rlView().then(() => {
+    // rlView 渲染后，直接展示评估表单并预填
+    const card = $("#rl-eval-card");
+    if (card) {
+      card.style.display = "";
+      $("#rl-eval-form").innerHTML = `<form id="rl-eval-form-inner">
+        <div class="form-row"><label>checkpoint</label><input id="rev-ck" value="${esc(checkpointDir)}" style="font-family:Consolas" class="mini"></div>
+        <div class="form-row"><label>局数</label><input id="rev-ep" type="number" value="3" min="1" class="mini"></div>
+        <div class="form-row"><label>输出目录</label><input id="rev-outdir" value="outputs/eval/sac_pusht_gui" class="mini"></div>
+        <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="rev-live" style="width:auto;min-width:0"> 评估过程实时推流</label></div>
+        <div class="form-row"><button type="submit">🎯 开始评估</button></div></form>`;
+      $("#rl-eval-form-inner").onsubmit = async (e) => {
+        e.preventDefault();
+        const body = { checkpoint: $("#rev-ck").value, episodes: $("#rev-ep").value,
+                       outdir: $("#rev-outdir").value, stream: $("#rev-live").checked };
+        const j = await (await fetch("/api/rl_eval", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        })).json();
+        if (j.error) { alert("失败: " + j.error); return; }
+        const onDone = () => { stopLive(); showVideos(j.project, j.out_root || "outputs"); };
+        if (j.stream_dir) startLive(j.project, j.stream_dir);
+        runCmd("RL 评估 " + checkpointDir, j.project, j.cmd, j.cwd, onDone);
+      };
+      card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
+}
+
 // ---------------- 项目报告 ----------------
 async function projectReport(name) {
   const rm = await (await fetch("/proj/" + encodeURIComponent(name) + "/file/README.md"));
   const readme = rm.ok ? await rm.text() : "（无 README）";
-  const an = await (await fetch("/api/analysis")).json();
+  const [an, files, pj] = await Promise.all([
+    (await fetch("/api/analysis")).json(),
+    (await fetch("/api/project_files/" + encodeURIComponent(name))).json(),
+    (await fetch("/api/project/" + encodeURIComponent(name))).json(),
+  ]);
+  const progress = pj.progress || "";
+  const workflows = pj.workflows || [];
   const mine = an.filter((it) => it.project === name);
-  const rows = mine.map((it) => {
-    const s = it.summary || {};
-    const key = ["success_rate", "pc_success", "mean_max_coverage", "mean_sum_reward", "n_episodes", "ep0_max_coverage"]
-      .filter((k) => k in s).map((k) => `${esc(k)}=${esc(s[k])}`).join(" · ");
-    return `<tr><td class="small">${esc(it.rel)}</td><td>${key || "（无结构化摘要）"}</td>
-      <td><a class="file-link" href="#" data-url="/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(it.rel)}" data-name="${esc(it.rel)}">打开</a></td></tr>`;
-  }).join("");
-  const files = await (await fetch("/api/project_files/" + encodeURIComponent(name))).json();
-  const vids = files.filter((f) => /\.(mp4|gif)$/.test(f.path)).slice(0, 12);
-  const byStem = {};
-  for (const v of vids) {
-    const stem = v.path.split("/").pop().replace(/\.(mp4|gif)$/i, "");
-    (byStem[stem] = byStem[stem] || []).push(v);
+
+  // 指标分派到工作流（按 match 子串匹配；未匹配的归入「其他」）
+  const buckets = workflows.map((w) => ({ wf: w, items: [] }));
+  const other = { wf: { id: "other", name: "其他 / 未归类", icon: "📁", summary: "" }, items: [] };
+  for (const it of mine) {
+    let placed = false;
+    for (const b of buckets) {
+      if ((b.wf.match || []).some((pat) => it.rel.includes(pat))) { b.items.push(it); placed = true; break; }
+    }
+    if (!placed) other.items.push(it);
   }
-  const vidsHtml = Object.values(byStem).map((g) => {
-    const gif = g.find((c) => c.path.endsWith(".gif"));
-    const mp4 = g.find((c) => c.path.endsWith(".mp4"));
-    const s = gif || mp4;
-    if (!s) return "";
-    const src = `/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(s.path)}`;
-    const dl = mp4 && gif ? ` <a class="file-link" href="${`/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(mp4.path)}`}">⬇mp4</a>` : "";
-    return `<figure>${gif ? `<img src="${src}" style="width:100%;max-height:180px;border-radius:10px;background:#0f1520">` : `<video controls src="${src}" style="width:100%;max-height:180px;border-radius:10px;background:#0f1520"></video>`}<figcaption class="hint">${esc(s.path.split("/").pop())}${dl}</figcaption></figure>`;
-  }).join("");
+  const allBuckets = [...buckets.filter((b) => b.items.length), ...(other.items.length ? [other] : [])];
+
+  const metricTable = (items) => {
+    const rows = items.map((it) => {
+      const s = it.summary || {};
+      const key = ["success_rate", "pc_success", "mean_max_coverage", "mean_sum_reward", "n_episodes", "ep0_max_coverage", "avg_reward", "avg_max_coverage"]
+        .filter((k) => k in s).map((k) => `${esc(k)}=${esc(s[k])}`).join(" · ");
+      return `<tr><td class="small">${esc(it.rel)}</td><td>${key || "（无结构化摘要）"}</td>
+        <td><a class="file-link" href="#" data-url="/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(it.rel)}" data-name="${esc(it.rel)}">打开</a></td></tr>`;
+    }).join("");
+    return `<table><thead><tr><th>结果文件</th><th>摘要</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">（无）</td></tr>'}</tbody></table>`;
+  };
+  const videoGallery = (vdirs) => {
+    const cands = files.filter((f) => /\.(mp4|gif)$/.test(f.path) && vdirs.some((d) => f.path.startsWith(d + "/")));
+    if (!cands.length) return '<p class="hint">（无视频）</p>';
+    const byStem = {};
+    for (const v of cands) { const stem = v.path.split("/").pop().replace(/\.(mp4|gif)$/i, ""); (byStem[stem] = byStem[stem] || []).push(v); }
+    return Object.values(byStem).map((g) => {
+      const gif = g.find((c) => c.path.endsWith(".gif"));
+      const mp4 = g.find((c) => c.path.endsWith(".mp4"));
+      const s = gif || mp4;
+      if (!s) return "";
+      const src = `/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(s.path)}`;
+      const dl = mp4 && gif ? ` <a class="file-link" href="${`/proj/${encodeURIComponent(name)}/file/${encodeURIComponent(mp4.path)}`}">⬇mp4</a>` : "";
+      return `<figure>${gif ? `<img src="${src}">` : `<video controls src="${src}"></video>`}<figcaption class="hint">${esc(s.path.split("/").pop())}${dl}</figcaption></figure>`;
+    }).join("");
+  };
+
+  const wfSections = allBuckets.map((b) => `
+    <div class="card rep-wf">
+      <h3>${esc(b.wf.icon || "🔄")} ${esc(b.wf.name || b.wf.id)}</h3>
+      ${b.wf.summary ? `<p class="hint">${esc(b.wf.summary)}</p>` : ""}
+      ${(b.wf.steps || []).length ? `<details><summary>流程步骤</summary><ol class="wf-steps">${(b.wf.steps || []).map((s) => `<li><b>${esc(s.title)}</b><br><span class="hint">${esc(s.meaning || "")}</span>${s.cmd ? `<br><code>${esc(s.cmd)}</code>` : ""}</li>`).join("")}</ol></details>` : ""}
+      ${(b.wf.weights || []).length ? `<details><summary>权重（${b.wf.weights.length}）</summary><ul>${(b.wf.weights || []).map((w) => `<li><code>${esc(w.path)}</code> <span class="hint">${esc(w.label || "")} · ${esc(w.note || "")}</span></li>`).join("")}</ul></details>` : ""}
+      <h4>📈 评估/推理指标（${b.items.length} 项）</h4>${metricTable(b.items)}
+      <h4>🎬 推理视频</h4><div class="gallery">${videoGallery(b.wf.video_dirs || [])}</div>
+    </div>`).join("");
+
   mainEl.innerHTML = `<h2>📊 项目报告 · ${esc(name)} <button class="secondary" onclick="window.print()">🖨 打印/导出 PDF</button> <button class="secondary" id="rep-export">⬇ 导出静态 HTML</button> <button class="secondary" id="rep-back">← 返回项目</button></h2>
     <div id="rep-body">
     <div class="card"><h3>📖 项目介绍</h3><div id="rep-readme">${md(readme)}</div></div>
-    <div class="card"><h3>📈 评估/推理指标（${mine.length} 项）</h3>
-      <table><thead><tr><th>结果文件</th><th>摘要</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">（暂无）</td></tr>'}</tbody></table></div>
-    <div class="card"><h3>🎬 推理视频（最新 12 个）</h3><div class="gallery">${vidsHtml || '<p class="hint">（暂无）</p>'}</div></div>
+    ${wfSections || '<div class="card"><p class="hint">（暂无工作流）</p></div>'}
+    <div class="card"><h3>📈 进度（PROGRESS.md）</h3><div>${md(progress)}</div></div>
+    <div class="card"><h3>📂 全部文件</h3><div id="rep-files">${fileGroupUI(files)}</div></div>
     </div>`;
   $("#rep-back").onclick = () => openProject(name);
   $("#rep-export").onclick = async () => {
@@ -348,8 +469,9 @@ async function projectReport(name) {
       table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #e4e8ef;padding:.4rem .6rem;text-align:left;font-size:.85rem}
       .metric{display:inline-block;background:#f0f4f9;border-radius:8px;padding:.15rem .55rem;margin:.15rem .3rem;font-size:.76rem;font-family:Consolas,monospace}
       .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.9rem}
-      .gallery img{width:100%;max-height:220px;object-fit:contain;border:1px solid #e4e8ef;border-radius:10px;background:#0f1520}
+      .gallery img,.gallery video{width:100%;max-height:220px;object-fit:contain;border:1px solid #e4e8ef;border-radius:10px;background:#0f1520}
       figure{margin:0}.hint{color:#6b7686;font-size:.82rem}code{background:#f0f3f8;padding:.1rem .35rem;border-radius:5px}
+      ol.wf-steps li{margin:.4rem 0}
       #rep-body{max-width:1000px;margin:0 auto}`;
     const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
       <title>项目报告 · ${esc(name)}</title><style>${css}</style></head>
@@ -514,49 +636,78 @@ function architectureHTML(m) {
   }
   return `<p class="hint">模型类型 ${esc(t)} 暂无预设架构图，查看配置详情。</p>`;
 }
+const TYPE_GROUPS = {
+  act: { label: "ACT（模仿学习）", badge: "badge-act", desc: "Transformer+ResNet 行为克隆" },
+  smolvla: { label: "SmolVLA（视觉-语言-动作）", badge: "badge-vla", desc: "VLM 骨干 + 动作头" },
+  gaussian_actor: { label: "SAC（强化学习）", badge: "badge-sac", desc: "CNN 编码器 + 高斯策略 + Critic" },
+  vlm: { label: "VLM 基础模型", badge: "badge-vlm", desc: "视觉-语言骨干" },
+};
+function typeLabel(t) { return TYPE_GROUPS[t] ? TYPE_GROUPS[t].label : "其他模型"; }
+function typeBadge(t) { return TYPE_GROUPS[t] ? TYPE_GROUPS[t].badge : "badge-other"; }
 async function modelsView() {
   mainEl.innerHTML = `<h2>🧠 模型</h2>
-    <div class="card"><p class="hint">按模型大类分组（默认收起），每类下列出已有权重；点「架构」看带注释的结构图与超参数，「推理」填入推理表单，「删除」移除权重。</p>
+    <div class="card"><p class="hint">两级分类：<b>模型架构</b>（ACT / SAC / SmolVLA / VLM）→ <b>权重实例</b>（同一训练的各 checkpoint 按步数承接）。每个权重带<b>功能注释</b>与<b>时间戳</b>。「架构」看结构图，「推理」填入推理表单，「删除」移除权重。</p>
       <div class="toolbar"><button id="md-refresh">🔄 刷新</button><button id="md-import">⬇ 导入模型/权重</button></div>
       <div id="md-list"></div></div>`;
   const refresh = async () => {
     const models = await (await fetch("/api/models")).json();
     const el = $("#md-list");
     if (!models.length) { el.innerHTML = '<p class="hint">（无本地模型，点「导入模型/权重」）</p>'; return; }
-    // 按类型分组（大类），组内按名称排序（权重小类）
-    const groups = {};
-    for (const m of models) {
-      const g = m.type === "vlm" ? "VLM 基础模型" : (m.type === "act" ? "ACT（模仿学习）" : (m.type === "smolvla" ? "SmolVLA（VLA）" : "其他"));
-      (groups[g] = groups[g] || []).push(m);
-    }
+    // 第一级：按模型架构分组
+    const byType = {};
+    for (const m of models) (byType[m.type] = byType[m.type] || []).push(m);
+    // 第二级：同一架构下按「模型实例（group）」分组
     let html = "";
-    for (const [g, ms] of Object.entries(groups)) {
-      html += `<details class="grp"><summary>📦 ${esc(g)}（${ms.length}）</summary><div class="grp-inner">`;
-      for (const m of ms) {
-        const badge = m.type === "smolvla" ? "badge-vla" : (m.type === "act" ? "badge-act" : (m.type === "vlm" ? "badge-vlm" : "badge-other"));
+    for (const t of Object.keys(byType).sort()) {
+      const ms = byType[t];
+      const byGroup = {};
+      for (const m of ms) (byGroup[m.group] = byGroup[m.group] || []).push(m);
+      const tg = TYPE_GROUPS[t];
+      html += `<details class="grp" ${Object.keys(byType).length === 1 ? "open" : ""}><summary>📦 ${esc(typeLabel(t))}（${Object.keys(byGroup).length} 个模型实例）${tg ? `<span class="grp-sub">${esc(tg.desc)}</span>` : ""}</summary><div class="grp-inner">`;
+      for (const [grp, gms] of Object.entries(byGroup)) {
+        // 权重按承接顺序（checkpoint 步数 / last 靠后）
+        const sorted = gms.slice().sort((a, b) => {
+          const na = a.label === "last" ? 1e12 : (parseInt(a.label) || 0);
+          const nb = b.label === "last" ? 1e12 : (parseInt(b.label) || 0);
+          return na - nb;
+        });
+        const head = sorted[0];
         html += `<div class="model-card">
-          <div class="model-head"><span class="model-name">${esc(m.name)}</span><span class="badge ${badge}">${esc(m.type)}</span><span class="model-src">${m.source}</span></div>
-          <div class="model-meta">chunk=${m.chunk_size ?? "-"} · obs=${m.n_obs_steps ?? "-"} · 骨干=${esc(m.vision_backbone || m.model_id || "-")}</div>
-          <div class="model-path">${esc(m.path)}</div>
-          <div class="model-actions">
-            <button class="arch-btn">🏗 架构与超参数</button>
-            <button class="use-btn">🚀 用于推理</button>
-            <button class="del-btn danger">🗑 删除</button>
-          </div></div>`;
+          <div class="model-head">
+            <span class="model-name">${esc(grp)}</span>
+            <span class="badge ${typeBadge(t)}">${esc(t)}</span>
+            ${head.source === "hf-cache" ? '<span class="model-src">HF 缓存</span>' : '<span class="model-src">本地自训</span>'}
+          </div>
+          <div class="model-meta">${esc(head.note || "")}${head.desc ? " · " + esc(head.desc) : ""}</div>
+          <table class="weights-table"><thead><tr><th>权重（step）</th><th>功能注释</th><th>时间戳</th><th></th></tr></thead><tbody>`;
+        for (const m of sorted) {
+          html += `<tr>
+            <td class="wlabel">${esc(m.label)}</td>
+            <td class="small">${esc(m.note || "-")}</td>
+            <td class="small">${esc(m.ts_str || "-")}</td>
+            <td class="wactions">
+              <button class="arch-btn mini">🏗 架构</button>
+              <button class="use-btn mini">🚀 推理</button>
+              <button class="del-btn mini danger">🗑</button>
+            </td></tr>`;
+        }
+        html += `</tbody></table></div>`;
       }
       html += "</div></details>";
     }
     el.innerHTML = html;
-    el.querySelectorAll(".arch-btn").forEach((b, i) => {
-      const flat = Object.values(groups).flat();
-      b.onclick = () => modelArchView(flat[i]);
-    });
-    el.querySelectorAll(".use-btn").forEach((b, i) => {
-      const flat = Object.values(groups).flat();
-      b.onclick = () => inferView(flat[i].path);
-    });
+    // 计算按钮对应的权重顺序（架构→组→步数承接）
+    const flat = [];
+    for (const t of Object.keys(byType).sort()) {
+      const gmap = {};
+      for (const m of byType[t]) (gmap[m.group] = gmap[m.group] || []).push(m);
+      for (const grp of Object.keys(gmap)) {
+        flat.push(...gmap[grp].sort((a, b) => (a.label === "last" ? 1e12 : parseInt(a.label) || 0) - (b.label === "last" ? 1e12 : parseInt(b.label) || 0)));
+      }
+    }
+    el.querySelectorAll(".arch-btn").forEach((b, i) => { b.onclick = () => modelArchView(flat[i]); });
+    el.querySelectorAll(".use-btn").forEach((b, i) => { b.onclick = () => inferView(flat[i].path); });
     el.querySelectorAll(".del-btn").forEach((b, i) => {
-      const flat = Object.values(groups).flat();
       b.onclick = async () => {
         const m = flat[i];
         if (!confirm("确认删除权重：\n" + m.name + "\n" + m.path + " ?")) return;
@@ -743,7 +894,15 @@ async function inferView(prefillPath) {
 // ---------------- RL 工作台（SAC on PushT） ----------------
 async function rlView() {
   mainEl.innerHTML = `<h2>🎮 强化学习（SAC on PushT）</h2>
-    <div class="card"><form id="rl-form">
+    <div class="card"><h3>SAC 训练流程</h3>
+      <div class="arch">
+        <div class="arch-row">
+          ${archBox("① 采样（Actor 交互）", "策略看图像+位置\n输出动作 → 环境执行\n奖励=覆盖率", "#2ca02c", "")}${archArrow()}${archBox("② 训练（Learner 更新）", "Critic 学打分\nActor 学改进\n经验存 replay buffer", "#ff7f0e", "")}${archArrow()}${archBox("③ 评估（Checkpoint）", "加载权重去探索噪声\n跑 N 局算覆盖率/成功率", "#1f77b4", "")}
+        </div>
+        <div class="arch-note">SAC = 试错学习：没有标准答案，只有奖励数字。Actor 在仿真里不断交互攒经验，Critic 从中学习「什么动作未来奖励高」，Actor 跟着改进。训练与评估在同一页：先训练出 checkpoint，再评估该 checkpoint。</div>
+      </div>
+    </div>
+    <div class="card"><h3>⚙️ 训练（阶段 ①+②，learner + actor 双进程）</h3><form id="rl-form">
       <div class="form-row"><label>运行名</label><input id="rl-job" value="sac_pusht" style="font-family:Consolas" class="mini"></div>
       <div class="form-row"><label>训练预设</label><select id="rl-preset">
         <option value="smoke">🔥 冒烟（600 交互步 · 约 1-2 分钟）</option>
@@ -760,10 +919,10 @@ async function rlView() {
         <div class="form-row"><label>fps</label><input id="rl-fps" type="number" value="10" class="mini"></div>
       </details>
       <div class="form-row"><button type="submit">🎮 开始训练（learner + actor）</button>
-        <span class="hint">SAC 双进程：learner 训练 + actor 交互，监督脚本负责启停与 checkpoint</span></div>
+        <span class="hint">监督脚本自动：启 learner → 等端口 → 启 actor → 等完成 → 冲刷落盘 → 清理</span></div>
     </form></div>
-    <div class="card"><h3>📦 训练运行 <button id="rl-refresh" class="secondary">🔄 刷新</button></h3><div id="rl-runs"></div></div>
-    <div class="card" id="rl-eval-card" style="display:none"><h3>🎯 评估 checkpoint</h3><div id="rl-eval-form"></div></div>
+    <div class="card"><h3>📦 训练运行（checkpoint 承接） <button id="rl-refresh" class="secondary">🔄 刷新</button></h3><div id="rl-runs"></div></div>
+    <div class="card" id="rl-eval-card" style="display:none"><h3>🎯 评估（阶段 ③：加载 checkpoint 推理）</h3><div id="rl-eval-form"></div></div>
     <div class="card" id="live-card" style="display:none"><h3>🖥 实时仿真画面</h3>
       <div class="live-panel"><div class="live-frame"><img id="live-img" alt="waiting..."><p class="hint" id="live-status">等待画面…</p></div>
       <div class="live-meta" id="live-meta"></div></div></div>
@@ -791,7 +950,7 @@ async function rlView() {
     if (!runs.length) { el.innerHTML = '<p class="hint">（暂无 RL 训练运行。点上方「开始训练」跑一次冒烟）</p>'; return; }
     el.innerHTML = runs.map((r) => `
       <div class="model-card">
-        <div class="model-head"><span class="model-name">📦 ${esc(r.job)}（${esc(r.dir)}）</span></div>
+        <div class="model-head"><span class="model-name">📦 ${esc(r.job)}</span><span class="model-src">${esc(r.dir)}</span></div>
         <div class="model-meta">
           <span class="metric">优化步数=${r.opt_step ?? "—"}</span>
           <span class="metric">交互局=${r.n_episodes}</span>
@@ -800,27 +959,28 @@ async function rlView() {
         </div>
         <div class="model-actions">
           <select class="rl-ck" data-dir="${esc(r.dir)}">
-            ${(r.checkpoints.length ? r.checkpoints : []).map((s) => `<option value="${s}">${s}</option>`).join("")}
+            ${r.checkpoints.map((s) => `<option value="${s}">${s}</option>`).join("")}
             ${r.has_last ? '<option value="last">last</option>' : ""}
           </select>
           <button class="secondary rl-eval" data-dir="${esc(r.dir)}" data-job="${esc(r.job)}">🎯 评估该 checkpoint</button>
-          <a class="btn-link" href="/proj/libero/out/${esc(r.dir)}/checkpoints/last" target="_blank">📂 打开目录</a>
+          <a class="btn-link" href="/proj/pusht/out/${esc(r.dir)}/checkpoints/last" target="_blank">📂 打开目录</a>
         </div>
       </div>`).join("");
     el.querySelectorAll(".rl-eval").forEach((b) => {
-      b.onclick = () => showRlEval(b.dataset.dir, b.dataset.job);
+      b.onclick = () => showRlEval(b.dataset.dir, b.dataset.job, b.closest(".model-card").querySelector(".rl-ck").value);
     });
   };
 
-  const showRlEval = (dir, job) => {
+  const showRlEval = (dir, job, ck) => {
     const card = $("#rl-eval-card");
     card.style.display = "";
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
     $("#rl-eval-form").innerHTML = `<form id="rl-eval-form-inner">
-      <div class="form-row"><label>checkpoint</label><input id="rev-ck" value="${esc(dir)}/checkpoints/last" style="font-family:Consolas" class="mini"></div>
+      <div class="form-row"><label>checkpoint</label><input id="rev-ck" value="${esc(dir)}/checkpoints/${esc(ck || "last")}" style="font-family:Consolas" class="mini"></div>
       <div class="form-row"><label>局数</label><input id="rev-ep" type="number" value="3" min="1" class="mini"></div>
       <div class="form-row"><label>输出目录</label><input id="rev-outdir" value="outputs/eval/sac_pusht_gui" class="mini"></div>
-      <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="rev-live" style="width:auto;min-width:0"> 评估过程实时推流</label></div>
-      <div class="form-row"><button type="submit">🎯 开始评估</button></div></form>`;
+      <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="rev-live" style="width:auto;min-width:0"> 评估过程实时推流（结束仍生成视频）</label></div>
+      <div class="form-row"><button type="submit">🎯 开始评估</button><span class="hint">评估 = SAC 的「推理」：确定性动作跑环境，输出覆盖率/成功率</span></div></form>`;
     $("#rl-eval-form-inner").onsubmit = async (e) => {
       e.preventDefault();
       const body = { checkpoint: $("#rev-ck").value, episodes: $("#rev-ep").value,

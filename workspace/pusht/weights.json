@@ -1,0 +1,7 @@
+{
+  "act_pusht_real": { "note": "自训 ACT（行为克隆）", "desc": "lerobot/pusht 数据集训练 25k 步，PushT 推块任务" },
+  "sac_pusht_smoke": { "note": "自训 SAC（强化学习）", "desc": "gym-pusht 试错 600 交互步冒烟，验证 RL 管线" },
+  "aadarshram/act_pusht": { "note": "社区 ACT 权重", "desc": "官方环境覆盖率 0.9534（已验证）" },
+  "Lemon-03/ACT_PushT_test": { "note": "社区 ACT（测试）", "desc": "测试用，效果弱" },
+  "lerobot/diffusion_pusht": { "note": "官方 Diffusion Policy", "desc": "扩散策略基线" }
+}

@@ -1,0 +1,71 @@
+{
+  "workflows": [
+    {
+      "id": "act",
+      "icon": "🎯",
+      "name": "ACT 模仿学习",
+      "kind": "imitation",
+      "summary": "从专家演示数据学习：把人类/脚本推块的动作当作标准答案，训练网络逐帧模仿。",
+      "steps": [
+        {
+          "title": "① 准备专家演示数据",
+          "meaning": "模仿学习的『课本』。lerobot/pusht 含 206 条专家推块轨迹（25650 帧），每条记录了图像、机械臂位置和专家动作。没有它，ACT 就不知道『该往哪推』。",
+          "desc": "下载 lerobot/pusht 数据集（206 episodes / 25650 帧，observation.image 96×96 + state + action）",
+          "cmd": "python -m lerobot.scripts.lerobot_info --dataset.repo_id=lerobot/pusht"
+        },
+        {
+          "title": "② 训练 ACT（行为克隆）",
+          "meaning": "『照着抄』。ACT（Transformer + ResNet）输入当前图像和位置，输出未来 100 步动作序列；训练目标是最小化预测动作与专家动作的误差（L1）。本质是监督学习，标签就是专家动作。",
+          "desc": "行为克隆训练：视觉 → Transformer 编码 → VAE 潜变量 → 解码 100 步动作块",
+          "cmd": "python -m lerobot.scripts.lerobot_train --dataset.repo_id=lerobot/pusht --policy.type=act --output_dir=outputs/train/act_pusht_real --steps=25000 --batch_size=8 --save_freq=5000 --eval_steps=0 --env_eval_freq=0 --wandb.enable=false"
+        },
+        {
+          "title": "③ 推理 / 评估",
+          "meaning": "『验收』。加载某个 checkpoint，在官方 pymunk 或自建 MuJoCo 环境里推块，算覆盖率（block 进入目标区的比例）与成功率（覆盖率>95%）。视频 + metrics.json 记录结果。",
+          "desc": "run_pusht_rollout.py 在官方(pymunk) / 自建 MuJoCo 环境跑 N 局，输出视频 + metrics.json",
+          "cmd": "python workspace/pusht/mujoco_basics/pusht/run_pusht_rollout.py --env official --n_episodes 10 --policy-path outputs/train/act_pusht_real/checkpoints/last/pretrained_model --outdir outputs/rollout_final"
+        }
+      ],
+      "weights": [
+        { "path": "outputs/train/act_pusht_real/checkpoints/025000/pretrained_model", "label": "025000 步", "note": "自训 ACT 25k 步（最终）" },
+        { "path": "outputs/train/act_pusht_real/checkpoints/last/pretrained_model", "label": "最新（last）", "note": "自训 ACT 最新 checkpoint" },
+        { "path": "aadarshram/act_pusht", "label": "社区 ACT", "note": "社区权重（官方环境 0.9534 覆盖率）" }
+      ],
+      "video_dirs": ["rollout_final_25k_official", "rollout_final_25k_mujoco", "rollout_official_success", "rollout_mujoco_damp5_fric2_10seeds"],
+      "match": ["act_pusht_real", "rollout_"]
+    },
+    {
+      "id": "sac",
+      "icon": "🎮",
+      "name": "SAC 强化学习",
+      "kind": "rl",
+      "summary": "不抄作业，自己试错：在仿真里乱推→看奖励→更新策略，一步步摸索出能推进目标区的动作。",
+      "steps": [
+        {
+          "title": "① 采集经验（actor 交互）",
+          "meaning": "『试错』。策略网络（gaussian_actor）看到图像+位置后输出动作，在 gym-pusht 物理环境执行；环境按覆盖率给奖励（块推进目标区越多分越高）。这些 (状态,动作,奖励,新状态) 存进 replay buffer。没有标准答案，只有分数。",
+          "desc": "actor 进程在 gym-pusht 环境跑 N 步，把 transition 经 gRPC 发给 learner",
+          "cmd": "python rl_scripts/run_sac_pusht.py --config_path rl_configs/sac_pusht_smoke.json --clean"
+        },
+        {
+          "title": "② 训练 Actor / Critic",
+          "meaning": "『总结规律』。Critic（价值网络）从 buffer 抽经验学习『这个状态做这个动作未来能拿多少奖励』；Actor（策略）据此改进，输出 Critic 打分更高的动作。SAC 额外最大化熵，鼓励探索不早熟。",
+          "desc": "learner 进程：从 replay buffer 抽批，SAC 更新 critic(2 个)+actor+temperature（~20 步/s）",
+          "cmd": "python -m lerobot.rl.learner --config_path rl_configs/sac_pusht_smoke.json"
+        },
+        {
+          "title": "③ 评估 checkpoint",
+          "meaning": "『验收』。加载某优化步的 checkpoint，关掉探索（确定性动作）在环境里跑 N 局，统计覆盖率和成功率，输出视频 + metrics.json。与 ACT 的差别：ACT 一步到位（训练完即推理），SAC 的『推理』就是去掉探索噪声的确定性策略。",
+          "desc": "eval_sac_pusht.py 加载 checkpoint 跑 N 局，输出 metrics.json + 视频（可实时推流）",
+          "cmd": "python rl_scripts/eval_sac_pusht.py --checkpoint outputs/train/sac_pusht_smoke/checkpoints/last --n-episodes 3 --outdir outputs/eval/sac_pusht_gui"
+        }
+      ],
+      "weights": [
+        { "path": "outputs/train/sac_pusht_smoke/checkpoints/000800/pretrained_model", "label": "000800 步", "note": "SAC 冒烟 800 优化步" },
+        { "path": "outputs/train/sac_pusht_smoke/checkpoints/last/pretrained_model", "label": "最新（last）", "note": "SAC 冒烟最新 checkpoint" }
+      ],
+      "video_dirs": ["eval/sac_pusht_smoke_000800"],
+      "match": ["sac_pusht", "sac_"]
+    }
+  ]
+}

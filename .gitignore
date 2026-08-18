@@ -33,3 +33,6 @@ workspace/libero/.libero/
 # ============ RL 运行瞬时产物 ============
 workspace/libero/rl_configs/generated/
 workspace/libero/rl_scripts/logs/
+
+# 实时推流瞬时帧
+**/outputs/stream/
