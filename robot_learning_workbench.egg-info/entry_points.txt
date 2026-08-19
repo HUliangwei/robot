@@ -1,0 +1,2 @@
+[console_scripts]
+rlw = workbench.cli.main:main

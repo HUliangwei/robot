@@ -1,0 +1,13 @@
+schema_version: rlw.node_config/v1
+node_id: local_hlw
+executor: local
+capabilities:
+  execution: true
+  archive: true
+  gui: true
+storage_roots:
+  project: .
+  datasets: datasets
+  runs: runs
+# Secrets are references only. Never put tokens/passwords here.
+secret_refs: []

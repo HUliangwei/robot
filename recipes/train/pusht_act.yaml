@@ -1,0 +1,13 @@
+schema_version: rlw.recipe/v1
+name: pusht_act_baseline
+kind: train
+provider: lerobot
+policy_type: act
+dataset_repo_id: lerobot/pusht
+native_overrides:
+  steps: 25000
+  batch_size: 8
+  seed: 1000
+notes: >-
+  Command template only. Resolve against the installed LeRobot version before launching;
+  the adapter deliberately does not reimplement LeRobot training logic.

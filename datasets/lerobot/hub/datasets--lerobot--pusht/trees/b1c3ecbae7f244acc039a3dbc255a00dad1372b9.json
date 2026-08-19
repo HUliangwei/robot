@@ -1,0 +1,49 @@
+{
+ "format_version": 1,
+ "files": {
+  ".gitattributes": {
+   "size": 2419,
+   "blob_id": "55cab133643a2a73e083373d2106533678d0edd5"
+  },
+  "README.md": {
+   "size": 3465,
+   "blob_id": "d6d05cf25be35694ec0c2fe7a702ff22ab040105"
+  },
+  "data/chunk-000/file-000.parquet": {
+   "size": 674393,
+   "blob_id": "aa9978985a47adda2c5ace81f1752591f02e7514",
+   "lfs_sha256": "9abc0431f12d10c33b5b37b1bf1e6e557c8ae1c8c29fb86658969e48fcbbbf01",
+   "lfs_size": 674393,
+   "xet_hash": "bf8adc972c3ae9663fb430b1f27fc66059d95a4013f4c7a39f9b941c48efee59"
+  },
+  "meta/episodes/chunk-000/file-000.parquet": {
+   "size": 106584,
+   "blob_id": "5afdf909ae11c88ed9157e99531c0838769ec2c6",
+   "lfs_sha256": "bc1226f33d3d1635ec1954f9942073709be8e106fde5f4f16b9d52edc4e0ebc4",
+   "lfs_size": 106584,
+   "xet_hash": "7beea199eb6a6e38668a3d79ad4a7d28259547886dd5c6c918a66bf9996150f3"
+  },
+  "meta/info.json": {
+   "size": 2261,
+   "blob_id": "de3c71d108d220f5d500416542bb5b8a49574eaa"
+  },
+  "meta/stats.json": {
+   "size": 4371,
+   "blob_id": "28e319831a7f4f99dfadcba0e7aaafe41cb4f618"
+  },
+  "meta/tasks.parquet": {
+   "size": 2265,
+   "blob_id": "aef396765715e48e13d070bf4fc311d162821a11",
+   "lfs_sha256": "95535f5152771bc0a6ab0fd93d23d7c1fecd9b7a13dc117852dfdd94f5b2c711",
+   "lfs_size": 2265,
+   "xet_hash": "afbfa466941d0f0415e990120076ae7099f991209e4911b81eb9347870e92b1b"
+  },
+  "videos/observation.image/chunk-000/file-000.mp4": {
+   "size": 6890970,
+   "blob_id": "322acd7687f69851b73ca8b217457118f5700ba1",
+   "lfs_sha256": "f58d11857651dad5983c021b56a50a68a6ce19068834c1fb5cac099219fb3a78",
+   "lfs_size": 6890970,
+   "xet_hash": "ffde14cef30177238df55627613bd7681a21e7b4f0d32a9e8fe5fed002ff753b"
+  }
+ }
+}

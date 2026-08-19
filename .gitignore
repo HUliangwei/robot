@@ -1,7 +1,6 @@
 # ============ 重型/不可推送内容 ============
 # conda 环境（~4GB）、数据集缓存（~11GB）、MuJoCo 二进制（44MB）
 envs/
-datasets/
 tool/
 archives/
 
@@ -25,7 +24,6 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
-gui/.runs/
 
 # LIBERO 本机配置（含绝对路径）
 workspace/libero/.libero/
@@ -36,3 +34,61 @@ workspace/libero/rl_scripts/logs/
 
 # 实时推流瞬时帧
 **/outputs/stream/
+
+# BEGIN RLW V3 MANAGED
+# machine-local RLW state
+.rlw/
+.rlw_migration_backup/
+
+# local provider environments/tools/caches
+envs/
+tool/
+archives/
+
+# dataset payload/cache: manifests + small metadata remain trackable
+datasets/hub/
+datasets/**/raw/
+datasets/**/cache/
+datasets/**/data/
+datasets/**/processed/
+datasets/**/payload/
+datasets/**/*.parquet
+datasets/**/*.mp4
+datasets/**/*.avi
+datasets/**/*.mkv
+
+# Run-owned heavy payload
+runs/**/logs/
+runs/**/checkpoints/
+runs/**/rollouts/
+runs/**/evaluation/native/
+runs/**/artifacts/
+runs/**/*.safetensors
+runs/**/*.pt
+runs/**/*.pth
+runs/**/*.ckpt
+runs/**/*.mp4
+
+# model/optimizer state anywhere
+**/*.safetensors
+**/training_state/
+**/optimizer_state*
+**/rng_state*
+**/checkpoints/
+
+# legacy runtime/transient outputs
+workspace/**/outputs/train/
+workspace/**/outputs/stream/
+workspace/**/rl_configs/generated/
+workspace/**/rl_scripts/logs/
+legacy/gui_dashboard_v4/.runs/
+
+# Python/editor/runtime
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.log
+.DS_Store
+Thumbs.db
+# END RLW V3 MANAGED
