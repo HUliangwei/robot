@@ -59,16 +59,38 @@ def tail(path: str, n: int = 40) -> str:
         return ""
 
 
+def last_meaningful(path: str) -> str:
+    """抓日志里最后一条有意义的进度行（奖励/优化步/交互步），跳过噪音。"""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return ""
+    for line in reversed(lines):
+        s = line.strip()
+        if not s:
+            continue
+        if any(k in s for k in ("Episode", "Optimization step", "episode", "Global step", "reward")):
+            return s
+        # 兜底：不在黑名单里的最后一条非空行
+    for line in reversed(lines):
+        if line.strip():
+            return line.strip()
+    return ""
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config_path", default=os.path.join(HERE, "rl_configs", "sac_pusht_smoke.json"))
     ap.add_argument("--learner_port", type=int, default=50051)
     ap.add_argument("--settle_s", type=float, default=20.0, help="actor 结束后再等 learner 冲刷多少秒")
     ap.add_argument("--max_wait_s", type=float, default=1200.0, help="actor 最长运行时间")
+    ap.add_argument("--progress_interval_s", type=float, default=10.0, help="打印进度的时间间隔（秒）")
     ap.add_argument("--clean", action="store_true", help="清空已有 output_dir 再跑")
     args = ap.parse_args()
 
     cfg = json.load(open(args.config_path, encoding="utf-8"))
+    resume = bool(cfg.get("resume"))
     out_dir = os.path.normpath(os.path.join(HERE, cfg.get("output_dir", "outputs/train/sac_pusht_smoke")))
     if not out_dir.startswith(os.path.normpath(HERE)):
         print(f"[supervisor] 错误: output_dir 必须在 {HERE} 内")
@@ -76,8 +98,11 @@ def main() -> int:
     if args.clean and os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
         print(f"[supervisor] 已清空 {out_dir}", flush=True)
-    if os.path.exists(os.path.join(out_dir, "checkpoints", "last")):
-        print(f"[supervisor] 错误: {out_dir} 已有 checkpoint，请用 --clean 或改 output_dir")
+    if not resume and os.path.exists(os.path.join(out_dir, "checkpoints", "last")):
+        print(f"[supervisor] 错误: {out_dir} 已有 checkpoint，请用 --clean 覆盖重训，或改为续训（resume=true）")
+        return 1
+    if resume and not os.path.exists(os.path.join(out_dir, "checkpoints", "last")):
+        print(f"[supervisor] 错误: 续训（resume=true）需要在 {out_dir} 存在 checkpoints/last，先完成一次训练")
         return 1
     # 注意：不要预先创建 out_dir —— learner validate() 要求目录不存在（resume=False）
 
@@ -91,6 +116,10 @@ def main() -> int:
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
+    # 实时可视化：把 stream_dir 透传给 actor 子进程（actor 内部按 env.rl 写帧）
+    stream_dir = cfg.get("stream_dir") or ""
+    if stream_dir:
+        env["RL_STREAM_DIR"] = stream_dir.replace("\\", "/").strip("/")
 
     learner_log = os.path.join(out_dir, "logs", f"learner_{cfg.get('job_name', 'rl')}.log")
     actor_log = os.path.join(out_dir, "logs", f"actor_{cfg.get('job_name', 'rl')}.log")
@@ -132,12 +161,14 @@ def main() -> int:
             if actor.poll() is not None:
                 actor_ok = actor.returncode == 0
                 break
-            # 每 30s 汇报一次进度（从日志里抓最近一行）
-            if time.time() - last_progress > 30:
+            # 每 progress_interval_s 汇报一次进度（抓最后一条含奖励/优化步的行）
+            if time.time() - last_progress > args.progress_interval_s:
                 last_progress = time.time()
-                lines = tail(learner_log, 1).strip() or tail(log_learner, 1).strip()
-                alines = tail(actor_log, 1).strip() or tail(log_actor, 1).strip()
-                print(f"[supervisor] 运行中… learner: {lines[:100]} | actor: {alines[:100]}", flush=True)
+                lines = last_meaningful(learner_log) or last_meaningful(log_learner)
+                alines = last_meaningful(actor_log) or last_meaningful(log_actor)
+                el = int(time.time() - t0)
+                print(f"[supervisor] +{el}s | learner: {lines[:140]}", flush=True)
+                print(f"[supervisor] +{el}s | actor  : {alines[:140]}", flush=True)
             time.sleep(2.0)
     except KeyboardInterrupt:
         print("[supervisor] 收到 Ctrl+C，清理…", flush=True)

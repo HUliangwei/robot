@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import threading
@@ -27,11 +28,47 @@ WORKSPACE = os.path.join(ROBOT, "workspace")
 DOCS = os.path.join(ROBOT, "docs")
 RUNS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".runs")
 os.makedirs(RUNS_DIR, exist_ok=True)
+RUN_REGISTRY = os.path.join(RUNS_DIR, "registry.json")
 
-runs = {}          # run_id -> {"proc", "log", "started"}
+runs = {}          # run_id -> {"proc", "log", "cmd", "cwd", "project", "started"}
 run_lock = threading.Lock()
 ARTIFACT_EXTS = (".mp4", ".gif", ".png", ".jpg")
 SERVER = None      # set in main(); used by /api/shutdown
+
+
+def _save_registry():
+    """把 run 元数据落盘，使刷新后仍能列出历史运行与输出。"""
+    try:
+        data = []
+        with run_lock:
+            for rid, r in runs.items():
+                data.append({"run_id": rid, "cmd": r.get("cmd"), "cwd": r.get("cwd"),
+                             "project": r.get("project"), "log": r.get("log"),
+                             "started": r.get("started")})
+        with open(RUN_REGISTRY, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _load_registry():
+    """启动时恢复 run 元数据（进程句柄已失效，但日志/命令仍在）。"""
+    try:
+        if os.path.exists(RUN_REGISTRY):
+            data = json.load(open(RUN_REGISTRY, encoding="utf-8"))
+            for d in data:
+                rid = d.get("run_id")
+                old_log = d.get("log")
+                if not rid or not old_log or not os.path.exists(old_log):
+                    continue
+                runs[rid] = {"proc": None, "log": old_log, "cmd": d.get("cmd"),
+                             "cwd": d.get("cwd"), "project": d.get("project"),
+                             "started": d.get("started")}
+    except Exception:
+        pass
+
+
+_load_registry()
 
 # directories / extensions excluded from the file browser (heavy weights, caches, vcs)
 FILE_EXCLUDE_DIRS = {"__pycache__", ".git", ".vscode", ".idea", ".runs", ".cache",
@@ -301,6 +338,21 @@ def find_metrics():
 
 def build_train_cmd(b):
     """Generate a lerobot_train command from the training form. Returns (cmd, project, cwd)."""
+    resume = bool(b.get("resume"))
+    checkpoint = (b.get("checkpoint") or "").strip().replace("\\", "/").strip("/")
+
+    # 续训：直接加载 checkpoint（其 train_config.json / pretrained_model / output_dir），
+    # 从该 checkpoint 继续。lerobot_train 会用 --config_path 定位并恢复全部训练状态。
+    if resume:
+        if not checkpoint:
+            raise ValueError("续训需要指定待承接的 checkpoint 目录（checkpoints/<step> 或 checkpoints/last）")
+        if checkpoint.startswith(".."):
+            raise ValueError("checkpoint 必须是项目内相对路径（不允许 ..）")
+        project = "libero" if "libero" in checkpoint else "pusht"
+        cmd = (f"python -m lerobot.scripts.lerobot_train --resume=true "
+               f"--config_path={checkpoint} --wandb.enable=false")
+        return cmd, project, f"workspace/{project}"
+
     dataset = (b.get("dataset") or "").strip()
     policy = (b.get("policy") or "act").strip()
     steps = int(b.get("steps") or 5000)
@@ -330,7 +382,7 @@ def build_train_cmd(b):
            f"--output_dir={outdir} --steps={steps} --batch_size={batch} "
            f"{extra}{eval_args}--wandb.enable=false")
     cwd = f"workspace/{project}"
-    return cmd, project, cwd
+    return cmd, project, f"workspace/{project}"
 
 
 def build_infer_cmd(b):
@@ -404,14 +456,24 @@ def build_rl_cmd(b):
     device = (b.get("device") or "cuda").strip()
     obs_type = (b.get("obs_type") or "pixels_agent_pos").strip()
     fps = int(b.get("fps") or 10)
+    resume = bool(b.get("resume"))
+    visualize = bool(b.get("visualize", b.get("stream")))  # 本地窗口实时渲染（不再是网页推流）
+    # 输出目录：显式指定，或按运行名默认；必须为项目内相对路径
+    output_dir = (b.get("output_dir") or "").strip().replace("\\", "/").strip("/")
+    if not output_dir:
+        output_dir = f"outputs/train/{job}"
+    if output_dir.startswith(".."):
+        raise ValueError("输出目录必须是项目内相对路径（不允许 ..）")
 
     cfg = {
         "job_name": job,
+        "resume": resume,
         "env": {
             "type": "pusht", "task": "PushT-v0", "fps": fps, "episode_length": episode_length,
             "obs_type": obs_type, "render_mode": "rgb_array",
             "observation_height": 96, "observation_width": 96,
             "visualization_width": 384, "visualization_height": 384,
+            "visualize": visualize,
         },
         "policy": {
             "type": "gaussian_actor", "device": device, "storage_device": device,
@@ -430,7 +492,7 @@ def build_rl_cmd(b):
             },
         },
         "algorithm": {"type": "sac", "utd_ratio": 1, "policy_update_freq": 1},
-        "output_dir": f"outputs/train/{job}",
+        "output_dir": output_dir,
         "steps": online_steps,
         "batch_size": batch,
         "save_freq": save_freq,
@@ -443,8 +505,10 @@ def build_rl_cmd(b):
     with open(os.path.join(_RL_CONFIG_DIR, fname), "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
     cmd = (f"python rl_scripts/run_sac_pusht.py --config_path rl_configs/generated/{fname} "
-           f"--settle_s {p['settle']} --clean")
-    return cmd, "pusht", "workspace/pusht", f"rl_configs/generated/{fname}", f"outputs/train/{job}"
+           f"--settle_s {p['settle']}")
+    if not resume:
+        cmd += " --clean"
+    return cmd, "pusht", "workspace/pusht", f"rl_configs/generated/{fname}", output_dir, visualize
 
 
 def rl_runs_list():
@@ -571,7 +635,9 @@ def start_run(proj_name, cmd, cwd):
     with open(log, "w", encoding="utf-8") as lf:
         proc = subprocess.Popen(full, cwd=resolved_cwd, stdout=lf, stderr=subprocess.STDOUT, env=env)
     with run_lock:
-        runs[run_id] = {"proc": proc, "log": log, "cmd": cmd, "started": time.time()}
+        runs[run_id] = {"proc": proc, "log": log, "cmd": cmd, "cwd": cwd,
+                        "project": proj_name, "started": time.time()}
+    _save_registry()
     return run_id
 
 
@@ -660,6 +726,33 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, json.dumps(find_metrics(), ensure_ascii=False))
         if path == "/api/rl_runs":
             return self._send(200, json.dumps(rl_runs_list(), ensure_ascii=False))
+        if path == "/api/rl_dirs":
+            # 列出可选的 RL 训练目录及各自 checkpoint（供下拉选择）
+            train_base = os.path.join(WORKSPACE, "pusht", "outputs", "train")
+            dirs = []
+            if os.path.isdir(train_base):
+                for d in sorted(os.listdir(train_base)):
+                    full = os.path.join(train_base, d)
+                    if not os.path.isdir(full):
+                        continue
+                    ck_dir = os.path.join(full, "checkpoints")
+                    if not os.path.isdir(ck_dir):
+                        continue
+                    cks = sorted(x for x in os.listdir(ck_dir) if x.isdigit())
+                    # 只保留 gaussian_actor（SAC）策略的训练目录，排除 ACT 等
+                    sample = cks[0] if cks else "last"
+                    cfgp = os.path.join(ck_dir, sample, "pretrained_model", "config.json")
+                    is_sac = False
+                    try:
+                        c = json.load(open(cfgp, encoding="utf-8"))
+                        is_sac = c.get("type") == "gaussian_actor"
+                    except Exception:
+                        continue
+                    if not is_sac:
+                        continue
+                    has_last = os.path.isdir(os.path.join(ck_dir, "last"))
+                    dirs.append({"dir": f"outputs/train/{d}", "checkpoints": cks, "has_last": has_last})
+            return self._send(200, json.dumps({"dirs": dirs}, ensure_ascii=False))
         if path.startswith("/ws/stream"):
             import base64 as _b64
             import glob as _glob
@@ -863,6 +956,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps(json.load(open(cfg_fp, encoding="utf-8")), ensure_ascii=False))
             except Exception as e:
                 return self._send(500, json.dumps({"error": str(e)}))
+        if path.startswith("/api/dir"):
+            # 目录列表（修复「打开目录」404：checkpoints 等目录需要列出内容）
+            import urllib.parse as _up
+
+            q = _up.parse_qs(urlparse(self.path).query)
+            project = q.get("project", [""])[0]
+            rel = q.get("dir", [""])[0]
+            base = safe_join(os.path.join(WORKSPACE, project), rel)
+            if base is None:
+                return self._send(400, json.dumps({"error": "bad dir"}))
+            if not os.path.isdir(base):
+                return self._send(404, json.dumps({"error": "目录不存在", "dir": rel}))
+            entries = []
+            for e in sorted(os.listdir(base)):
+                fp = os.path.join(base, e)
+                entries.append({"name": e, "is_dir": os.path.isdir(fp),
+                                "size": 0 if os.path.isdir(fp) else os.path.getsize(fp)})
+            parent = os.path.dirname(rel.replace("\\", "/"))
+            return self._send(200, json.dumps({"dir": rel, "parent": parent, "entries": entries}, ensure_ascii=False))
         if path.startswith("/proj/"):
             # serve project / repo files statically
             parts = path.split("/")[2:]  # [name, out|doc|file|root|note, ...]
@@ -889,6 +1001,23 @@ class Handler(BaseHTTPRequestHandler):
                     data = data.replace(b'<img src="viz/', b'<img src="/proj/_/doc/viz/')
                 return self._send(200, data, content_type_for(fp, ext))
             return self._send(404, "not found", "text/plain")
+        if path == "/api/runs":
+            items = []
+            with run_lock:
+                ids = list(runs.keys())
+            for rid in ids:
+                with run_lock:
+                    r = runs.get(rid)
+                if not r:
+                    continue
+                proc = r.get("proc")
+                alive = bool(proc) and proc.poll() is None
+                code = None if (proc is None or alive) else proc.returncode
+                items.append({"run_id": rid, "cmd": r.get("cmd"), "cwd": r.get("cwd"),
+                             "project": r.get("project"), "started": r.get("started"),
+                             "running": alive, "exit_code": code})
+            items.sort(key=lambda a: a.get("started") or 0, reverse=True)
+            return self._send(200, json.dumps(items, ensure_ascii=False))
         if path.startswith("/api/run/"):
             run_id = path.split("/")[3]
             with run_lock:
@@ -898,9 +1027,11 @@ class Handler(BaseHTTPRequestHandler):
             out = ""
             if os.path.exists(r["log"]):
                 out = open(r["log"], encoding="utf-8", errors="replace").read()[-60000:]
-            alive = r["proc"].poll() is None
-            code = None if alive else r["proc"].returncode
-            return self._send(200, json.dumps({"running": alive, "exit_code": code, "output": out}, ensure_ascii=False))
+            proc = r.get("proc")
+            alive = bool(proc) and proc.poll() is None
+            code = None if (proc is None or alive) else proc.returncode
+            return self._send(200, json.dumps({"running": alive, "exit_code": code,
+                                               "output": out, "cmd": r.get("cmd")}, ensure_ascii=False))
         if path.startswith("/api/report"):
             fp = os.path.join(DOCS, "inference_report.html")
             if os.path.exists(fp):
@@ -973,7 +1104,7 @@ class Handler(BaseHTTPRequestHandler):
                 target = os.path.dirname(os.path.dirname(p))
             if target is None or not target.startswith(base_hub) and not target.startswith(os.path.join(WORKSPACE, "pusht", "outputs")):
                 return self._send(400, json.dumps({"error": "只允许删除模型缓存或本地 checkpoint"}))
-            import shutil
+
 
             if os.path.isdir(target):
                 shutil.rmtree(target)
@@ -1038,10 +1169,11 @@ class Handler(BaseHTTPRequestHandler):
             ln = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(ln) or b"{}")
             try:
-                cmd, proj, cwd, config_path, outdir = build_rl_cmd(body)
+                cmd, proj, cwd, config_path, outdir, visualize = build_rl_cmd(body)
                 run_id = start_run(proj, cmd, cwd)
                 return self._send(200, json.dumps({"run_id": run_id, "project": proj, "cmd": cmd, "cwd": cwd,
-                                                   "config_path": config_path, "outdir": outdir}))
+                                                   "config_path": config_path, "outdir": outdir,
+                                                   "visualize": visualize}))
             except Exception as e:
                 return self._send(400, json.dumps({"error": str(e)}))
         if u.path == "/api/rl_eval":
@@ -1059,14 +1191,119 @@ class Handler(BaseHTTPRequestHandler):
             cmd = (f"python rl_scripts/eval_sac_pusht.py --checkpoint {ck} "
                    f"--n-episodes {episodes} --outdir {outdir}")
             if bool(body.get("stream")):
-                cmd += f" --stream-dir {stream_dir}"
+                cmd += f" --window"
             try:
                 run_id = start_run("pusht", cmd, "workspace/pusht")
                 return self._send(200, json.dumps({"run_id": run_id, "project": "pusht", "cmd": cmd,
                                                    "cwd": "workspace/pusht", "out_root": outdir,
-                                                   "stream_dir": stream_dir if bool(body.get("stream")) else None}))
+                                                   "window": bool(body.get("stream"))}))
             except Exception as e:
                 return self._send(500, json.dumps({"error": str(e)}))
+        if u.path == "/api/open":
+            # 打开系统文件管理器（资源管理器）定位到目标目录/文件
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            kind = body.get("kind", "dir")  # "dir" 打开目录 / "file" 选中文件
+            rel = (body.get("path") or "").strip().replace("\\", "/").strip("/")
+            if not rel or ".." in rel.split("/"):
+                return self._send(400, json.dumps({"error": "路径非法"}))
+            # 支持 workspace/<proj>/<rel> 或纯相对 workspace/<proj> 路径
+            proj = body.get("project") or "pusht"
+            target = os.path.join(WORKSPACE, proj, *rel.split("/")) if rel else os.path.join(WORKSPACE, proj)
+            if not os.path.exists(target):
+                return self._send(404, json.dumps({"error": "路径不存在: " + rel}))
+            try:
+                if os.path.isfile(target):
+                    subprocess.Popen(["explorer", "/select,", target])
+                else:
+                    subprocess.Popen(["explorer", target])
+                return self._send(200, json.dumps({"ok": True, "opened": rel}))
+            except Exception as e:
+                return self._send(500, json.dumps({"error": str(e)}))
+        if u.path == "/api/rl/save_as":
+            # 另存为：把某个 checkpoint 复制成新名字的 checkpoint（默认在原训练目录内）
+            ln = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(ln) or b"{}")
+            src = (body.get("checkpoint") or "").strip().replace("\\", "/").strip("/")
+            newname = (body.get("newname") or "").strip()
+            if not src or ".." in src.split("/"):
+                return self._send(400, json.dumps({"error": "checkpoint 参数非法"}))
+            src_abs = os.path.join(WORKSPACE, "pusht", *src.split("/"))
+            # 允许 src 指向 checkpoints/<step> 或完整相对路径（如 outputs/train/x/checkpoints/3000）
+            if not os.path.isdir(src_abs):
+                alt = os.path.join(WORKSPACE, "pusht", src)
+                src_abs = alt if os.path.isdir(alt) else src_abs
+            if not os.path.isdir(src_abs):
+                return self._send(404, json.dumps({"error": "源 checkpoint 目录不存在: " + src}))
+
+            # ---- 目标目录解析 ----
+            dest_parent = os.path.dirname(src_abs)
+            if body.get("dest_dir"):
+                cand = os.path.join(WORKSPACE, "pusht", body["dest_dir"].strip().replace("\\", "/").strip("/"))
+                dest_parent = cand if os.path.isdir(cand) else dest_parent
+            if not (os.path.realpath(dest_parent).startswith(os.path.realpath(os.path.join(WORKSPACE, "pusht")) + os.sep)):
+                return self._send(400, json.dumps({"error": "目标目录必须在 workspace/pusht 内"}))
+
+            # ---- 弹系统「另存为」对话框：让用户在文件管理器里选路径+文件名 ----
+            chosen = None
+            if body.get("use_dialog"):
+                chosen = None
+                target_dir = (os.path.join(WORKSPACE, "pusht", body["dest_dir"].strip().replace("\\", "/").strip("/"))
+                             if body.get("dest_dir") else dest_parent)
+                default_name = newname or (os.path.basename(src.rstrip("/")) + "_copy")
+                out_file = os.path.join(RUNS_DIR, f"dlg_{int(time.time()*1000)}.txt")
+                # 在独立进程跑 tkinter 对话框（避免 ThreadingHTTPServer 线程非主线程 tk.Tk 崩溃）
+                py = sys.executable
+                script = (
+                    "import tkinter as tk, tkinter.filedialog as fd, sys, io, os\n"
+                    "sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')\n"
+                    "target_dir, default_name, out_file = sys.argv[1], sys.argv[2], sys.argv[3]\n"
+                    "r = tk.Tk(); r.withdraw()\n"
+                    "r.attributes('-topmost', True)\n"
+                    "fp = fd.asksaveasfilename(title='另存为 checkpoint', initialdir=target_dir, initialfile=default_name)\n"
+                    "r.destroy()\n"
+                    "open(out_file, 'w', encoding='utf-8').write(fp or 'CANCEL')\n"
+                )
+                try:
+                    p = subprocess.Popen([py, "-c", script, target_dir, default_name, out_file],
+                                         cwd=os.path.join(ROBOT, "workspace", "pusht"))
+                    p.wait(timeout=600)
+                    if os.path.isfile(out_file):
+                        with open(out_file, encoding="utf-8") as f:
+                            v = f.read().strip()
+                        os.remove(out_file)
+                        if v and v != "CANCEL":
+                            chosen = v
+                except Exception as e:
+                    print(f"[save_as] dialog error: {e}", file=sys.stderr)
+                    chosen = None
+                if not chosen:
+                    return self._send(200, json.dumps({"cancelled": True}))
+
+            if chosen:
+                # 用户在文件管理器里选定了目标路径（可能是新目录 + 新文件名）
+                dest = chosen
+                if os.path.dirname(dest) and not (os.path.realpath(os.path.dirname(dest)).startswith(os.path.realpath(os.path.join(WORKSPACE, "pusht")) + os.sep)):
+                    return self._send(400, json.dumps({"error": "目标目录必须在 workspace/pusht 内"}))
+            else:
+                if not re.fullmatch(r"[A-Za-z0-9_\-]+", newname or ""):
+                    return self._send(400, json.dumps({"error": "新名称只能含字母数字下划线横线"}))
+                dest = os.path.join(dest_parent, newname)
+            if os.path.exists(dest):
+                return self._send(400, json.dumps({"error": f"目标已存在: {os.path.basename(dest)}"}))
+            try:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copytree(src_abs, dest)
+                rel = os.path.relpath(dest, os.path.join(WORKSPACE, "pusht")).replace(os.sep, "/")
+                # 打开文件管理器定位到保存结果
+                try:
+                    subprocess.Popen(["explorer", "/select,", dest])
+                except Exception:
+                    pass
+                return self._send(200, json.dumps({"ok": True, "src": src, "dest": rel, "opened": rel}))
+            except Exception as e:
+                return self._send(500, json.dumps({"error": str(e)}))
+
         if u.path.startswith("/api/run/"):
             parts = u.path.split("/")
             run_id = parts[3]
@@ -1075,9 +1312,10 @@ class Handler(BaseHTTPRequestHandler):
                 r = runs.get(run_id)
             if not r:
                 return self._send(404, json.dumps({"error": "no such run"}))
-            if action == "kill" and r["proc"].poll() is None:
+            proc = r.get("proc")
+            if action == "kill" and proc and proc.poll() is None:
                 try:
-                    r["proc"].kill()
+                    proc.kill()
                 except Exception:
                     pass
             return self._send(200, json.dumps({"ok": True}))

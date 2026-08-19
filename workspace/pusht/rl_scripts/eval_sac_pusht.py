@@ -66,6 +66,7 @@ def main():
     ap.add_argument("--max-steps", type=int, default=300)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--stream-dir", default=None)
+    ap.add_argument("--window", action="store_true", help="本机弹出实时窗口（cv2.imshow）实时渲染推理过程")
     args = ap.parse_args()
 
     policy, pre, post, env_cfg = load_policy(args.checkpoint)
@@ -109,6 +110,9 @@ def main():
                     frame = obs.get("pixels", None)
                 if frame is not None:
                     frames.append(frame)
+                    if args.window:
+                        cv2.imshow("eval SAC PushT", cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+                        cv2.waitKey(1)
                 if args.stream_dir:
                     _stream_write(args.stream_dir, step, frame, info)
             step += 1

@@ -10,7 +10,8 @@
     "observation_height": 96,
     "observation_width": 96,
     "visualization_width": 384,
-    "visualization_height": 384
+    "visualization_height": 384,
+    "visualize": true
   },
   "policy": {
     "type": "gaussian_actor",

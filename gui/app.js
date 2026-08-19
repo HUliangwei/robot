@@ -56,6 +56,24 @@ function fmtSize(n) {
 }
 const MEDIA_EXT = ["mp4", "gif", "png", "jpg", "jpeg", "svg", "webp"];
 
+// 统一「← 返回」按钮：有打开项目则回项目首页，否则回欢迎页
+function backButton() {
+  return `<button class="secondary back-btn" style="margin-right:.6rem">← 返回</button>`;
+}
+function wireBackButtons() {
+  mainEl.querySelectorAll(".back-btn").forEach((b) => {
+    b.onclick = () => { current ? openProject(current) : welcomeHome(); };
+  });
+}
+function welcomeHome() {
+  mainEl.innerHTML = `<section id="welcome">
+    <h2>欢迎 👋</h2>
+    <p>左侧「工作台」管理<strong>数据集</strong>、<strong>模型</strong>、发起<strong>训练</strong>与<strong>推理</strong>、查看<strong>分析</strong>。
+       <strong>底部终端</strong>会显示每一步操作对应的完整命令与实时输出，辅助熟悉命令行。</p>
+    <p class="hint">所有操作在本地执行；网页随窗口自适应缩放。</p>
+  </section>`;
+}
+
 // 浏览器优先显示 GIF（mp4v 编码浏览器不支持）；mp4 作为下载链接
 function mediaFigure(project, candidates) {
   const gif = candidates.find((c) => c.path.endsWith(".gif"));
@@ -345,32 +363,19 @@ function bindWorkflowCards(project, wfs, artifacts) {
     }
   });
 }
-// 从工作流跳转到 RL 评估（直接填入 checkpoint 并展开评估表单）
+// 从工作流跳转到 RL 评估（直接填入 checkpoint 并定位到推理表单）
 function rlEvalDirect(project, checkpointDir) {
   rlView().then(() => {
-    // rlView 渲染后，直接展示评估表单并预填
-    const card = $("#rl-eval-card");
-    if (card) {
-      card.style.display = "";
-      $("#rl-eval-form").innerHTML = `<form id="rl-eval-form-inner">
-        <div class="form-row"><label>checkpoint</label><input id="rev-ck" value="${esc(checkpointDir)}" style="font-family:Consolas" class="mini"></div>
-        <div class="form-row"><label>局数</label><input id="rev-ep" type="number" value="3" min="1" class="mini"></div>
-        <div class="form-row"><label>输出目录</label><input id="rev-outdir" value="outputs/eval/sac_pusht_gui" class="mini"></div>
-        <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="rev-live" style="width:auto;min-width:0"> 评估过程实时推流</label></div>
-        <div class="form-row"><button type="submit">🎯 开始评估</button></div></form>`;
-      $("#rl-eval-form-inner").onsubmit = async (e) => {
-        e.preventDefault();
-        const body = { checkpoint: $("#rev-ck").value, episodes: $("#rev-ep").value,
-                       outdir: $("#rev-outdir").value, stream: $("#rev-live").checked };
-        const j = await (await fetch("/api/rl_eval", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-        })).json();
-        if (j.error) { alert("失败: " + j.error); return; }
-        const onDone = () => { stopLive(); showVideos(j.project, j.out_root || "outputs"); };
-        if (j.stream_dir) startLive(j.project, j.stream_dir);
-        runCmd("RL 评估 " + checkpointDir, j.project, j.cmd, j.cwd, onDone);
-      };
-      card.scrollIntoView({ behavior: "smooth", block: "start" });
+    const ckInput = $("#rev-ck");
+    if (ckInput) {
+      ckInput.value = checkpointDir;
+      // 高亮提示并滚动到推理表单
+      const formCard = ckInput.closest(".card");
+      if (formCard) {
+        formCard.scrollIntoView({ behavior: "smooth", block: "start" });
+        formCard.style.outline = "2px solid #1f77b4";
+        setTimeout(() => { formCard.style.outline = ""; }, 1500);
+      }
     }
   });
 }
@@ -474,7 +479,7 @@ async function projectReport(name) {
 
 // ---------------- 数据集视图 ----------------
 async function datasetsView() {
-  mainEl.innerHTML = `<h2>📊 数据集</h2>
+  mainEl.innerHTML = `<h2>${backButton()}📊 数据集</h2>
     <div class="card"><p class="hint">点击行查看详情（meta + 统计 + 审查指引）。「导入」从 HF 下载数据集。</p>
       <div class="toolbar"><button id="ds-refresh">🔄 刷新</button><button id="ds-import">⬇ 导入数据集</button></div>
       <table id="ds-table"><thead><tr><th>repo_id</th><th>来源</th><th>大小</th><th>episodes</th><th>帧数</th><th>fps</th><th>特征</th></tr></thead><tbody></tbody></table>
@@ -505,6 +510,7 @@ async function datasetsView() {
     runCmd("导入数据集 " + repo, "libero", j.cmd, "workspace/libero", refresh);
   };
   refresh();
+  wireBackButtons();
 }
 async function datasetDetail(repo) {
   const el = $("#ds-detail");
@@ -626,7 +632,7 @@ const TYPE_GROUPS = {
 function typeLabel(t) { return TYPE_GROUPS[t] ? TYPE_GROUPS[t].label : "其他模型"; }
 function typeBadge(t) { return TYPE_GROUPS[t] ? TYPE_GROUPS[t].badge : "badge-other"; }
 async function modelsView() {
-  mainEl.innerHTML = `<h2>🧠 模型</h2>
+  mainEl.innerHTML = `<h2>${backButton()}🧠 模型</h2>
     <div class="card"><p class="hint">两级分类：<b>模型架构</b>（ACT / SAC / SmolVLA / VLM）→ <b>权重实例</b>（同一训练的各 checkpoint 按步数承接）。每个权重带<b>功能注释</b>与<b>时间戳</b>。「架构」看结构图，「推理」填入推理表单，「删除」移除权重。</p>
       <div class="toolbar"><button id="md-refresh">🔄 刷新</button><button id="md-import">⬇ 导入模型/权重</button></div>
       <div id="md-list"></div></div>`;
@@ -711,6 +717,7 @@ async function modelsView() {
     runCmd("导入模型 " + repo, "libero", j.cmd, "workspace/libero", refresh);
   };
   refresh();
+  wireBackButtons();
 }
 async function modelArchView(m) {
   let cfg = {};
@@ -748,19 +755,22 @@ async function modelArchView(m) {
 
 // ---------------- 训练视图 ----------------
 async function trainView() {
+  const saved = (() => { try { return JSON.parse(localStorage.getItem("train_ui_v1") || "{}"); } catch (e) { return {}; } })();
   const ds = await (await fetch("/api/datasets")).json();
   const dsOpts = ds.map((d) => `<option value="${esc(d.repo_id)}">${esc(d.repo_id)}（${d.episodes ?? "?"} ep）</option>`).join("");
-  mainEl.innerHTML = `<h2>🎓 训练</h2>
+  mainEl.innerHTML = `<h2>${backButton()}🎓 训练</h2>
     <div class="card"><form id="train-form">
       <div class="form-row"><label>数据集</label><select id="tr-dataset">${dsOpts || '<option value="lerobot/pusht">lerobot/pusht</option>'}</select></div>
       <div class="form-row"><label>模型类型</label><select id="tr-policy"><option value="act">ACT</option><option value="smolvla">SmolVLA</option></select></div>
-      <div class="form-row"><label>LIBERO 套件</label><input id="tr-task" value="libero_spatial" placeholder="libero_spatial/object/goal/10"></div>
-      <div class="form-row"><label>训练步数</label><input id="tr-steps" type="number" value="5000" min="1"></div>
-      <div class="form-row"><label>batch_size</label><input id="tr-batch" type="number" value="8" min="1" class="mini"></div>
-      <div class="form-row"><label>chunk_size</label><input id="tr-chunk" type="number" value="100" min="1" class="mini"></div>
-      <div class="form-row"><label>save_freq</label><input id="tr-save" type="number" value="5000" min="100" class="mini"></div>
-      <div class="form-row"><label>🔁 训练中评估</label><label class="hint" style="flex:1"><input type="checkbox" id="tr-eval" style="width:auto;min-width:0"> 每 <input id="tr-evalfreq" type="number" value="5000" min="100" style="width:90px;display:inline-block"> 步在仿真环境里评估一次（边训边看成功率，会占用训练时间）</label></div>
-      <div class="form-row"><label>输出目录</label><input id="tr-outdir" value="outputs/train/act_gui" placeholder="默认临时目录，不保存下次覆盖"></div>
+      <div class="form-row"><label>LIBERO 套件</label><input id="tr-task" value="${esc(saved.task || 'libero_spatial')}" placeholder="libero_spatial/object/goal/10"></div>
+      <div class="form-row"><label>训练步数</label><input id="tr-steps" type="number" value="${saved.steps || '5000'}" min="1"></div>
+      <div class="form-row"><label>batch_size</label><input id="tr-batch" type="number" value="${saved.batch || '8'}" min="1" class="mini"></div>
+      <div class="form-row"><label>chunk_size</label><input id="tr-chunk" type="number" value="${saved.chunk || '100'}" min="1" class="mini"></div>
+      <div class="form-row"><label>save_freq</label><input id="tr-save" type="number" value="${saved.save || '5000'}" min="100" class="mini"></div>
+      <div class="form-row"><label>🔁 训练中评估</label><label class="hint" style="flex:1"><input type="checkbox" id="tr-eval" style="width:auto;min-width:0" ${saved.eval ? 'checked' : ''}> 每 <input id="tr-evalfreq" type="number" value="${saved.evalfreq || '5000'}" min="100" style="width:90px;display:inline-block"> 步在仿真环境里评估一次（边训边看成功率，会占用训练时间）</label></div>
+      <div class="form-row"><label>输出目录</label><input id="tr-outdir" value="${esc(saved.outdir || 'outputs/train/act_gui')}" placeholder="默认临时目录，不保存下次覆盖"></div>
+      <div class="form-row"><label>🔁 续训</label><label class="hint" style="flex:1"><input type="checkbox" id="tr-resume" style="width:auto;min-width:0" ${saved.resume ? 'checked' : ''}> 从已有 checkpoint 继续训练（下方填待承接的 checkpoint 目录）</label></div>
+      <div class="form-row"><label>checkpoint</label><input id="tr-ckpt" value="${esc(saved.ckpt || '')}" placeholder="outputs/train/xxx/checkpoints/last 或 .../<step>" style="font-family:Consolas"></div>
       <div class="form-row"><label>（冒烟=50 步验证管线）</label><span style="flex:1;display:flex;gap:.6rem">
         <button type="submit" class="secondary">⚡ 正式训练</button>
         <button type="button" id="tr-smoke">🔥 冒烟测试（50 步）</button></span>
@@ -777,6 +787,8 @@ async function trainView() {
       batch_size: $("#tr-batch").value, output_dir: $("#tr-outdir").value,
       chunk_size: $("#tr-chunk").value, save_freq: $("#tr-save").value,
       eval_freq: $("#tr-eval").checked ? $("#tr-evalfreq").value : 0,
+      resume: $("#tr-resume").checked,
+      checkpoint: $("#tr-ckpt").value,
     };
     const j = await (await fetch("/api/train", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -784,8 +796,23 @@ async function trainView() {
     if (j.error) { alert("失败: " + j.error); return; }
     runCmd((steps < 100 ? "冒烟训练" : "训练") + " " + body.policy + " @" + body.dataset, j.project, j.cmd, j.cwd);
   };
-  $("#train-form").onsubmit = (e) => { e.preventDefault(); run(parseInt($("#tr-steps").value) || 5000); };
+  const persist = () => {
+    try { localStorage.setItem("train_ui_v1", JSON.stringify({
+      dataset: $("#tr-dataset").value, policy: $("#tr-policy").value,
+      task: $("#tr-task").value, steps: $("#tr-steps").value, batch: $("#tr-batch").value,
+      chunk: $("#tr-chunk").value, save: $("#tr-save").value,
+      eval: !!$("#tr-eval").checked, evalfreq: $("#tr-evalfreq").value,
+      outdir: $("#tr-outdir").value, resume: !!$("#tr-resume").checked, ckpt: $("#tr-ckpt").value,
+    })); } catch (e) {}
+  };
+  // 恢复表单（已在 HTML 模板里用 ${saved...} 预填，这里补齐 select/fixed）
+  if (saved.dataset) $("#tr-dataset").value = saved.dataset;
+  if (saved.policy) $("#tr-policy").value = saved.policy;
+  for (const id of ["tr-dataset","tr-policy","tr-task","tr-steps","tr-batch","tr-chunk","tr-save","tr-evalfreq","tr-outdir","tr-ckpt"]) { const el = $("#"+id); if (el) el.onchange = persist; }
+  $("#tr-eval").onchange = persist; $("#tr-resume").onchange = persist;
+  $("#train-form").onsubmit = (e) => { e.preventDefault(); persist(); run(parseInt($("#tr-steps").value) || 5000); };
   $("#tr-smoke").onclick = () => run(50);
+  wireBackButtons();
 }
 
 // ---------------- 推理 · 仿真视图（统一参数表单） ----------------
@@ -798,6 +825,7 @@ const INFER_PRESETS = {
   pusht_mujoco: { env: "mujoco", task: "", taskids: "", outdir: "outputs/rollout_pusht_mujoco", label: "PushT · MuJoCo" },
 };
 async function inferView(prefillPath) {
+  const saved = (() => { try { return JSON.parse(localStorage.getItem("infer_ui_v1") || "{}"); } catch (e) { return {}; } })();
   const models = await (await fetch("/api/models")).json();
   const mOpts = models.filter((m) => m.type !== "vlm").map((m) => `<option value="${esc(m.path)}">${esc(m.name)}（${esc(m.type)}）</option>`).join("");
   const envOpts = ['<option value="libero">LIBERO（Franka · MuJoCo）</option>',
@@ -805,16 +833,16 @@ async function inferView(prefillPath) {
     '<option value="official">PushT-官方（pymunk 2D）</option>'].join("");
   const chips = Object.entries(INFER_PRESETS).map(([k, v]) =>
     `<button type="button" class="chip" data-preset="${k}" title="${esc(v.outdir)}">${esc(v.label)}</button>`).join("");
-  mainEl.innerHTML = `<h2>🚀 推理</h2>
+  mainEl.innerHTML = `<h2>${backButton()}🚀 推理</h2>
     <div class="card"><form id="infer-form">
       <div class="form-row"><label>任务预设</label><div class="chips" id="inf-chips">${chips}</div></div>
       <div class="form-row"><label>仿真环境</label><select id="inf-env">${envOpts}</select>
         <span class="hint" id="inf-preset-hint"></span></div>
       <div class="form-row"><label>模型权重</label><select id="inf-model">${mOpts || '<option value="">（先导入模型）</option>'}</select></div>
       <div class="form-row"><label>或手填路径</label><input id="inf-path" value="${esc(prefillPath || "")}" placeholder="权重目录或 hub id" style="font-family:Consolas"></div>
-      <div class="form-row"><label>推理局数</label><input id="inf-ep" type="number" value="3" min="1" class="mini"></div>
-      <div class="form-row"><label>输出目录</label><input id="inf-outdir" value="outputs/rollout_libero_spatial" placeholder="LIBERO 实时/ PushT 用；LIBERO 非实时自动存 outputs/eval"></div>
-      <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="inf-live" style="width:auto;min-width:0"> 推理过程中实时推流画面（结束仍生成视频）</label></div>
+      <div class="form-row"><label>推理局数</label><input id="inf-ep" type="number" value="${saved.ep || '3'}" min="1" class="mini"></div>
+      <div class="form-row"><label>输出目录</label><input id="inf-outdir" value="${esc(saved.outdir || 'outputs/rollout_libero_spatial')}" placeholder="LIBERO 实时/ PushT 用；LIBERO 非实时自动存 outputs/eval"></div>
+      <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="inf-live" style="width:auto;min-width:0" ${saved.live ? 'checked' : ''}> 推理过程中实时推流画面（结束仍生成视频）</label></div>
       <details id="inf-task-details"><summary>LIBERO 任务参数（套件 / task_ids）</summary>
         <div class="form-row"><label>任务套件</label><input id="inf-task" value="libero_spatial" style="font-family:Consolas" class="mini"></div>
         <div class="form-row"><label>task_ids</label><input id="inf-taskids" value="[0]" class="mini" style="width:90px"><span class="hint">范围 [0,9]；多任务如 [0,1]</span></div>
@@ -849,8 +877,29 @@ async function inferView(prefillPath) {
   });
   $("#inf-env").onchange = () => applyEnvPreset($("#inf-env").value);
   $("#inf-model").onchange = () => { $("#inf-path").value = $("#inf-model").value; };
+  const persist = () => {
+    try { localStorage.setItem("infer_ui_v1", JSON.stringify({
+      env: $("#inf-env").value, path: $("#inf-path").value, model: $("#inf-model").value,
+      ep: $("#inf-ep").value, task: $("#inf-task").value, taskids: $("#inf-taskids").value,
+      outdir: $("#inf-outdir").value, live: !!$("#inf-live").checked,
+    })); } catch (e) {}
+  };
+  // 恢复表单
+  if (saved.env) $("#inf-env").value = saved.env;
+  if (saved.model) $("#inf-model").value = saved.model;
+  if (saved.path) $("#inf-path").value = saved.path;
+  if (saved.ep) $("#inf-ep").value = saved.ep;
+  if (saved.task) $("#inf-task").value = saved.task;
+  if (saved.taskids) $("#inf-taskids").value = saved.taskids;
+  if (saved.outdir) $("#inf-outdir").value = saved.outdir;
+  $("#inf-live").checked = !!saved.live;
+  for (const id of ["inf-env","inf-model","inf-path","inf-ep","inf-task","inf-taskids","inf-outdir"]) { const el = $("#"+id); if (el) el.onchange = persist; }
+  $("#inf-live").onchange = persist;
+  applyEnvPreset(saved.env || "libero", saved.task, saved.taskids, saved.outdir);
+  if (saved.env) { $("#inf-env").value = saved.env; }
   $("#infer-form").onsubmit = async (e) => {
     e.preventDefault();
+    persist();
     const body = {
       env: $("#inf-env").value, policy_path: $("#inf-path").value || $("#inf-model").value,
       episodes: $("#inf-ep").value, task: $("#inf-task").value,
@@ -870,21 +919,34 @@ async function inferView(prefillPath) {
     runCmd("推理 " + body.env + " @" + body.policy_path, j.project, j.cmd, j.cwd, onDone);
   };
   applyEnvPreset("libero");
+  wireBackButtons();
 }
 
 // ---------------- RL 工作台（SAC on PushT） ----------------
+// 表单值持久化：刷新/切页不丢失
+const RL_UI_KEY = "rl_ui_state_v1";
+function rlSaveUI(obj) { try { localStorage.setItem(RL_UI_KEY, JSON.stringify(obj)); } catch (e) {} }
+function rlLoadUI() { try { return JSON.parse(localStorage.getItem(RL_UI_KEY) || "{}"); } catch (e) { return {}; } }
+
 async function rlView() {
-  mainEl.innerHTML = `<h2>🎮 强化学习（SAC on PushT）</h2>
-    <div class="card"><h3>SAC 训练流程</h3>
-      <div class="arch">
-        <div class="arch-row">
-          ${archBox("① 采样（Actor 交互）", "策略看图像+位置\n输出动作 → 环境执行\n奖励=覆盖率", "#2ca02c", "")}${archArrow()}${archBox("② 训练（Learner 更新）", "Critic 学打分\nActor 学改进\n经验存 replay buffer", "#ff7f0e", "")}${archArrow()}${archBox("③ 评估（Checkpoint）", "加载权重去探索噪声\n跑 N 局算覆盖率/成功率", "#1f77b4", "")}
-        </div>
-        <div class="arch-note">SAC = 试错学习：没有标准答案，只有奖励数字。Actor 在仿真里不断交互攒经验，Critic 从中学习「什么动作未来奖励高」，Actor 跟着改进。训练与评估在同一页：先训练出 checkpoint，再评估该 checkpoint。</div>
-      </div>
+  const saved = rlLoadUI();
+  const outdir = saved.outdir || "outputs/train/sac_pusht";
+  const preset = saved.preset || "smoke";
+  const resume = !!saved.resume;
+  mainEl.innerHTML = `<h2>${backButton()}🎮 强化学习（SAC on PushT）</h2>
+    <div class="card"><h3>SAC 流程</h3>
+      <div class="arch-note">SAC = 试错学习：Actor 在仿真里攒经验，Critic 学打分，Actor 跟着改进。上方<strong>训练</strong>产出/延续 checkpoint，下方<strong>推理</strong>加载 checkpoint 跑 N 局验证（覆盖率/成功率）。</div>
     </div>
-    <div class="card"><h3>⚙️ 训练（阶段 ①+②，learner + actor 双进程）</h3><form id="rl-form">
-      <div class="form-row"><label>运行名</label><input id="rl-job" value="sac_pusht" style="font-family:Consolas" class="mini"></div>
+
+    <div class="card"><h3>⚙️ 训练</h3><form id="rl-form">
+      <div class="form-row"><label>目录</label><select id="rl-outdir" class="mini" style="font-family:Consolas;flex:1"></select>
+        <input id="rl-new-outdir" placeholder="+ 新建目录名（如 sac_pusht_v2）" class="mini" style="font-family:Consolas"></div>
+      <div class="form-row"><label>模式</label>
+        <select id="rl-mode" class="mini">
+          <option value="new">🆕 新建 checkpoint（从零训练）</option>
+          <option value="resume">🔁 选择 checkpoint 续训</option>
+        </select></div>
+      <div class="form-row" id="rl-ck-row" style="display:none"><label>续训 checkpoint</label><select id="rl-resume-ck" class="mini" style="font-family:Consolas"></select></div>
       <div class="form-row"><label>训练预设</label><select id="rl-preset">
         <option value="smoke">🔥 冒烟（600 交互步 · 约 1-2 分钟）</option>
         <option value="short">⚡ 短训（3000 步 · 约 5-10 分钟）</option>
@@ -899,86 +961,261 @@ async function rlView() {
         <div class="form-row"><label>设备</label><select id="rl-device"><option value="cuda">cuda</option><option value="cpu">cpu</option></select></div>
         <div class="form-row"><label>fps</label><input id="rl-fps" type="number" value="10" class="mini"></div>
       </details>
-      <div class="form-row"><button type="submit">🎮 开始训练（learner + actor）</button>
-        <span class="hint">监督脚本自动：启 learner → 等端口 → 启 actor → 等完成 → 冲刷落盘 → 清理</span></div>
+      <div class="form-row"><label>🪟 实时渲染</label><label class="hint" style="flex:1"><input type="checkbox" id="rl-live" style="width:auto;min-width:0" checked> 训练时在本机弹出实时窗口（cv2 弹窗；服务端桌面可见）</label></div>
+      <div class="form-row"><button type="submit">🎮 开始训练</button>
+        <span class="hint">监督脚本自动：启 learner → 等端口 → 启 actor → 冲刷落盘 → 清理</span></div>
     </form></div>
-    <div class="card"><h3>📦 训练运行（checkpoint 承接） <button id="rl-refresh" class="secondary">🔄 刷新</button></h3><div id="rl-runs"></div></div>
-    <div class="card" id="rl-eval-card" style="display:none"><h3>🎯 评估（阶段 ③：加载 checkpoint 推理）</h3><div id="rl-eval-form"></div></div>
+
+    <div class="card"><h3>📦 Checkpoint</h3>
+      <div class="form-row"><label>目录</label><select id="ck-dir" class="mini" style="font-family:Consolas"></select><button type="button" id="ck-refresh" class="secondary">🔄 刷新</button></div>
+      <div class="form-row"><label>checkpoint</label><select id="ck-select" class="mini" style="font-family:Consolas"></select></div>
+      <div class="form-row"><label>另存为到目录</label><select id="ck-save-dir" class="mini" style="font-family:Consolas"></select>
+        <input id="ck-save-name" placeholder="新名称（如 003000_best）" class="mini" style="font-family:Consolas"></div>
+      <div class="form-row"><button type="button" id="ck-saveas" class="secondary">💾 另存为（复制重命名）</button>
+        <button type="button" id="ck-open" class="btn-link">📂 打开文件所在目录</button></div>
+    </div>
+
+    <div class="card"><h3>🎯 推理（评估 checkpoint）</h3><form id="rl-eval-form">
+      <div class="form-row"><label>checkpoint</label><input id="rev-ck" value="${esc(outdir)}/checkpoints/last" style="font-family:Consolas" class="mini" readonly></div>
+      <div class="form-row"><label>局数</label><input id="rev-ep" type="number" value="3" min="1" class="mini"></div>
+      <div class="form-row"><label>输出目录</label><input id="rev-outdir" value="outputs/eval/sac_pusht_gui" class="mini"></div>
+      <div class="form-row"><label>🪟 实时渲染</label><label class="hint" style="flex:1"><input type="checkbox" id="rev-live" style="width:auto;min-width:0"> 推理时在本机弹出实时窗口（结束仍生成视频）</label></div>
+      <div class="form-row"><button type="submit">🎯 开始推理</button><span class="hint">= SAC 推理：加载 checkpoint 跑 N 局，输出覆盖率/成功率视频</span></div>
+    </form></div>
+
     <div class="card" id="live-card" style="display:none"><h3>🖥 实时仿真画面</h3>
       <div class="live-panel"><div class="live-frame"><img id="live-img" alt="waiting..."><p class="hint" id="live-status">等待画面…</p></div>
       <div class="live-meta" id="live-meta"></div></div></div>
-    <div class="card"><h3>🎬 评估结果</h3><div class="gallery" id="inf-gallery"><p class="hint">（评估完成后显示视频）</p></div></div>`;
+    <div class="card"><h3>🎬 推理结果</h3><div class="gallery" id="inf-gallery"><p class="hint">（推理完成后显示视频）</p></div></div>`;
 
+  // ---- 训练目录 / checkpoint 数据 ----
+  let dirsData = [];
+  const loadDirs = async () => {
+    const j = await (await fetch("/api/rl_dirs")).json();
+    dirsData = j.dirs || [];
+    return dirsData;
+  };
+  const fillDirSelect = (sel, selected) => {
+    sel.innerHTML = dirsData.map((d) => `<option value="${esc(d.dir)}" ${d.dir === selected ? "selected" : ""}>${esc(d.dir)}</option>`).join("");
+    if (!dirsData.length) sel.innerHTML = '<option value="">（无训练目录）</option>';
+  };
+  const fillCkSelect = (sel, dir, selected) => {
+    const d = dirsData.find((x) => x.dir === dir);
+    const cks = d ? d.checkpoints : [];
+    sel.innerHTML = cks.map((s) => `<option value="${s}" ${s === selected ? "selected" : ""}>${s}</option>`).join("")
+      + (d && d.has_last ? '<option value="last" ' + (selected === "last" ? "selected" : "") + '>last</option>' : "");
+    if (!cks.length && !(d && d.has_last)) sel.innerHTML = '<option value="">（无 checkpoint）</option>';
+  };
+  const syncEvalCk = () => {
+    const dir = $("#ck-dir").value, ck = $("#ck-select").value;
+    if (dir && ck) $("#rev-ck").value = `${dir}/checkpoints/${ck}`;
+  };
+  const restore = () => {
+    const s = saved;
+    for (const [k, id] of [["elen","rl-elen"],["steps","rl-steps"],["batch","rl-batch"],["save","rl-save"],["before","rl-before"],["fps","rl-fps"]]) {
+      if (s[k]) { const el = $("#" + id); if (el) el.value = s[k]; }
+    }
+    if (s.obs) $("#rl-obs").value = s.obs;
+    if (s.device) $("#rl-device").value = s.device;
+    if (s.live !== undefined) $("#rl-live").checked = !!s.live;
+    if (s.rev_live !== undefined) $("#rev-live").checked = !!s.rev_live;
+    if (s.ep) $("#rev-ep").value = s.ep;
+    if (s.eval_outdir) $("#rev-outdir").value = s.eval_outdir;
+    if (s.mode) { $("#rl-mode").value = s.mode; $("#rl-ck-row").style.display = s.mode === "resume" ? "" : "none"; }
+    if (s.new_outdir) $("#rl-new-outdir").value = s.new_outdir;
+  };
+
+  await loadDirs();
+  $("#rl-preset").value = preset;
+  fillDirSelect($("#rl-outdir"), outdir);
+
+  $("#rl-outdir").onchange = () => {
+    $("#rl-new-outdir").value = "";
+    fillCkSelect($("#rl-resume-ck"), $("#rl-outdir").value, "last");
+  };
+  const updateModeUi = () => {
+    const resumeMode = $("#rl-mode").value === "resume";
+    $("#rl-ck-row").style.display = resumeMode ? "" : "none";
+    if (resumeMode) fillCkSelect($("#rl-resume-ck"), $("#rl-outdir").value, "last");
+  };
+  $("#rl-mode").onchange = updateModeUi;
+
+  $("#ck-dir").onchange = () => { fillCkSelect($("#ck-select"), $("#ck-dir").value, "last"); syncEvalCk(); };
+  $("#ck-select").onchange = syncEvalCk;
+  $("#ck-refresh").onclick = async () => {
+    await loadDirs();
+    const d = $("#ck-dir").value || dirsData[0]?.dir;
+    if (d) { fillDirSelect($("#ck-dir"), d); fillCkSelect($("#ck-select"), d, "last"); }
+    fillDirSelect($("#rl-outdir"), $("#rl-outdir").value);
+    fillCkSelect($("#rl-resume-ck"), $("#rl-outdir").value, "last");
+    // 刷新 + 训练完成后，checkpoint 下拉会带上新 checkpoint；同时刷新"另存为到目录"
+    fillDirSelect($("#ck-save-dir"), $("#ck-dir").value);
+    syncEvalCk();
+    return false;
+  };
+
+  $("#ck-saveas").onclick = async () => {
+    const dir = $("#ck-dir").value, ck = $("#ck-select").value;
+    if (!dir || !ck) { alert("先选择目录和 checkpoint"); return; }
+    const newname = ($("#ck-save-name").value || "").trim();
+    const j = await (await fetch("/api/rl/save_as", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ checkpoint: `${dir}/checkpoints/${ck}`, newname, use_dialog: true }),
+    })).json();
+    if (j.cancelled) return;
+    if (j.error) { alert("另存为失败: " + j.error); return; }
+    flashHint("已另存为: " + j.dest + "（文件管理器已打开定位到结果）");
+    $("#ck-save-name").value = "";
+    await loadDirs();
+    fillDirSelect($("#ck-dir"), dir);
+    fillCkSelect($("#ck-select"), dir, "last");
+    syncEvalCk();
+  };
+  $("#ck-open").onclick = () => { openExplorer("pusht", $("#ck-dir").value + "/checkpoints/" + ($("#ck-select").value || "last")); };
+
+  // ---- 训练提交 ----
   const run = async () => {
+    const mode = $("#rl-mode").value;
+    const selDir = $("#rl-outdir").value;
+    const newName = $("#rl-new-outdir").value.trim();
+    // 目录：优先用「+ 新建目录名」，否则用下拉选中的已有目录
+    let dir;
+    let job;
+    if (newName) {
+      job = newName.replace(/[^A-Za-z0-9_\-]/g, "_") || "sac_pusht";
+      dir = "outputs/train/" + newName.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    } else {
+      dir = selDir;                       // 已是 outputs/train/<name>
+      job = (selDir || "").split("/").pop() || "sac_pusht";
+    }
+    const isResume = mode === "resume";
+    if (isResume && !$("#rl-resume-ck").value) { alert("请先选择要续训的 checkpoint"); return; }
     const body = {
-      job_name: $("#rl-job").value, preset: $("#rl-preset").value,
+      job_name: job, preset: $("#rl-preset").value,
+      output_dir: dir,
       episode_length: $("#rl-elen").value, online_steps: $("#rl-steps").value,
       batch_size: $("#rl-batch").value, save_freq: $("#rl-save").value,
       online_before: $("#rl-before").value, obs_type: $("#rl-obs").value,
       device: $("#rl-device").value, fps: $("#rl-fps").value,
+      visualize: $("#rl-live").checked,
+      resume: isResume,
     };
     const j = await (await fetch("/api/rl", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     })).json();
     if (j.error) { alert("失败: " + j.error); return; }
-    runCmd("RL 训练 " + body.job_name, j.project, j.cmd, j.cwd, refreshRuns);
+    rlSaveUI({ outdir: body.output_dir, preset: $("#rl-preset").value,
+               mode, resume: isResume, live: $("#rl-live").checked,
+               elen: $("#rl-elen").value, steps: $("#rl-steps").value, batch: $("#rl-batch").value,
+               save: $("#rl-save").value, before: $("#rl-before").value, fps: $("#rl-fps").value,
+               obs: $("#rl-obs").value, device: $("#rl-device").value });
+    const onDone = () => { setTimeout(() => rlView(), 2500); };  // 多等 2.5s 让 learner 冲刷落盘 + last 软链稳定
+    if (j.visualize) flashHint("已在服务端本机弹出实时窗口（请查看本机桌面）");
+    runCmd("RL " + (isResume ? "续训" : "训练") + " " + dir, j.project, j.cmd, j.cwd, onDone);
+  };
+  $("#rl-form").onsubmit = (e) => { e.preventDefault(); run(); };
+
+  // ---- 推理提交 ----
+  $("#rl-eval-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const body = { checkpoint: $("#rev-ck").value, episodes: $("#rev-ep").value,
+                   outdir: $("#rev-outdir").value, window: $("#rev-live").checked };
+    rlSaveUI(Object.assign(rlLoadUI(), { ep: body.episodes, eval_outdir: body.outdir, rev_live: body.window }));
+    const j = await (await fetch("/api/rl_eval", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    })).json();
+    if (j.error) { alert("失败: " + j.error); return; }
+    const onDone = () => { showVideos(j.project, j.out_root || "outputs"); };
+    if (j.window) flashHint("已在服务端本机弹出实时窗口");
+    runCmd("RL 推理 " + body.checkpoint, j.project, j.cmd, j.cwd, onDone);
   };
 
-  const refreshRuns = async () => {
-    const runs = await (await fetch("/api/rl_runs")).json();
-    const el = $("#rl-runs");
-    if (!el) return;
-    if (!runs.length) { el.innerHTML = '<p class="hint">（暂无 RL 训练运行。点上方「开始训练」跑一次冒烟）</p>'; return; }
-    el.innerHTML = runs.map((r) => `
-      <div class="model-card">
-        <div class="model-head"><span class="model-name">📦 ${esc(r.job)}</span><span class="model-src">${esc(r.dir)}</span></div>
-        <div class="model-meta">
-          <span class="metric">优化步数=${r.opt_step ?? "—"}</span>
-          <span class="metric">交互局=${r.n_episodes}</span>
-          <span class="metric">最新局奖励=${r.latest_ep_reward ?? "—"}</span>
-          <span class="metric">checkpoints=[${r.checkpoints.join(", ")}]${r.has_last ? " + last" : ""}</span>
-        </div>
-        <div class="model-actions">
-          <select class="rl-ck" data-dir="${esc(r.dir)}">
-            ${r.checkpoints.map((s) => `<option value="${s}">${s}</option>`).join("")}
-            ${r.has_last ? '<option value="last">last</option>' : ""}
-          </select>
-          <button class="secondary rl-eval" data-dir="${esc(r.dir)}" data-job="${esc(r.job)}">🎯 评估该 checkpoint</button>
-          <a class="btn-link" href="/proj/pusht/out/${esc(r.dir)}/checkpoints/last" target="_blank">📂 打开目录</a>
-        </div>
-      </div>`).join("");
-    el.querySelectorAll(".rl-eval").forEach((b) => {
-      b.onclick = () => showRlEval(b.dataset.dir, b.dataset.job, b.closest(".model-card").querySelector(".rl-ck").value);
+  restore();
+  updateModeUi();
+  if (dirsData.length) {
+    const def = dirsData[0].dir;
+    fillDirSelect($("#ck-dir"), def);
+    fillCkSelect($("#ck-select"), def, "last");
+    fillDirSelect($("#ck-save-dir"), def);
+    syncEvalCk();
+  }
+
+  // ---- 表单持久化：任何字段变更即存 localStorage（切换工作台/刷新不丢） ----
+  const persistRlForm = () => {
+    rlSaveUI({
+      outdir: $("#rl-outdir").value, new_outdir: $("#rl-new-outdir").value,
+      mode: $("#rl-mode").value, resume_ck: $("#rl-resume-ck").value,
+      preset: $("#rl-preset").value, live: !!$("#rl-live").checked,
+      elen: $("#rl-elen").value, steps: $("#rl-steps").value, batch: $("#rl-batch").value,
+      save: $("#rl-save").value, before: $("#rl-before").value,
+      obs: $("#rl-obs").value, device: $("#rl-device").value, fps: $("#rl-fps").value,
+      ep: $("#rev-ep").value, eval_outdir: $("#rev-outdir").value, rev_live: !!$("#rev-live").checked,
+      ck_dir: $("#ck-dir").value, ck_select: $("#ck-select").value,
     });
   };
+  const rlIds = ["rl-outdir","rl-new-outdir","rl-mode","rl-resume-ck","rl-preset","rl-live",
+    "rl-elen","rl-steps","rl-batch","rl-save","rl-before","rl-obs","rl-device","rl-fps",
+    "rev-ep","rev-outdir","rev-live","ck-dir","ck-select"];
+  for (const id of rlIds) {
+    const el = $("#" + id);
+    if (!el) continue;
+    el.onchange = persistRlForm;
+    el.oninput = persistRlForm;
+  }
+  wireBackButtons();
+}
 
-  const showRlEval = (dir, job, ck) => {
-    const card = $("#rl-eval-card");
-    card.style.display = "";
-    card.scrollIntoView({ behavior: "smooth", block: "start" });
-    $("#rl-eval-form").innerHTML = `<form id="rl-eval-form-inner">
-      <div class="form-row"><label>checkpoint</label><input id="rev-ck" value="${esc(dir)}/checkpoints/${esc(ck || "last")}" style="font-family:Consolas" class="mini"></div>
-      <div class="form-row"><label>局数</label><input id="rev-ep" type="number" value="3" min="1" class="mini"></div>
-      <div class="form-row"><label>输出目录</label><input id="rev-outdir" value="outputs/eval/sac_pusht_gui" class="mini"></div>
-      <div class="form-row"><label>🔴 实时画面</label><label class="hint" style="flex:1"><input type="checkbox" id="rev-live" style="width:auto;min-width:0"> 评估过程实时推流（结束仍生成视频）</label></div>
-      <div class="form-row"><button type="submit">🎯 开始评估</button><span class="hint">评估 = SAC 的「推理」：确定性动作跑环境，输出覆盖率/成功率</span></div></form>`;
-    $("#rl-eval-form-inner").onsubmit = async (e) => {
-      e.preventDefault();
-      const body = { checkpoint: $("#rev-ck").value, episodes: $("#rev-ep").value,
-                     outdir: $("#rev-outdir").value, stream: $("#rev-live").checked };
-      const j = await (await fetch("/api/rl_eval", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-      })).json();
-      if (j.error) { alert("失败: " + j.error); return; }
-      const onDone = () => { stopLive(); showVideos(j.project, j.out_root || "outputs"); };
-      if (j.stream_dir) startLive(j.project, j.stream_dir);
-      runCmd("RL 评估 " + job + " @" + body.checkpoint, j.project, j.cmd, j.cwd, onDone);
-    };
-  };
+// 打开系统文件管理器（资源管理器）定位到指定路径
+async function openExplorer(project, rel) {
+  if (!rel) return;
+  const j = await (await fetch("/api/open", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project, path: rel }),
+  })).json();
+  if (j.error) alert("无法打开: " + j.error);
+}
 
-  $("#rl-form").onsubmit = (e) => { e.preventDefault(); run(); };
-  $("#rl-refresh").onclick = refreshRuns;
-  refreshRuns();
+// 顶部短暂提示条
+function flashHint(text) {
+  let t = document.getElementById("flash-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "flash-toast";
+    t.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#1f77b4;color:#fff;" +
+      "padding:8px 18px;border-radius:6px;z-index:99999;box-shadow:0 2px 8px rgba(0,0,0,.3);font-size:14px;transition:opacity .4s";
+    document.body.appendChild(t);
+  }
+  t.textContent = text;
+  t.style.opacity = "1";
+  clearTimeout(t._t);
+  t._t = setTimeout(() => { t.style.opacity = "0"; }, 3500);
+}
+
+// ---------------- 目录浏览器（修复「打开目录」404） ----------------
+async function browseDir(project, dir) {
+  if (!dir) return;
+  const r = await fetch(`/api/dir?project=${encodeURIComponent(project)}&dir=${encodeURIComponent(dir)}`);
+  const j = await r.json();
+  if (j.error) { alert("无法打开目录: " + (j.error || j.dir)); return; }
+  let html = `${j.entries.map((e) => {
+    if (e.is_dir) {
+      return `<li><button class="file-link dir-enter" data-dir="${esc(j.dir)}/${esc(e.name)}">📁 ${esc(e.name)}</button></li>`;
+    } else {
+      const ext = e.name.split(".").pop().toLowerCase();
+      const url = `/proj/${encodeURIComponent(project)}/file/${encodeURIComponent(j.dir + "/" + e.name)}`;
+      return `<li><a class="file-link" data-url="${url}" data-name="${esc(e.name)}" href="${url}">📄 ${esc(e.name)} <span class="fsize">${fmtSize(e.size)}</span></a></li>`;
+    }
+  }).join("")}`;
+  mainEl.innerHTML = `<h2>📂 目录</h2>
+    <div class="card"><p class="hint"><code>workspace/${esc(project)}/${esc(j.dir)}</code></p>
+    ${j.parent ? `<button class="secondary dir-up" data-dir="${esc(j.parent)}">⬆ 上一级</button>` : ""}
+    <ul class="file-list">${html || '<li class="hint">（空目录）</li>'}</ul>
+    </div>`;
+  mainEl.querySelectorAll(".dir-up").forEach((b) => b.onclick = () => browseDir(project, b.dataset.dir));
+  mainEl.querySelectorAll(".dir-enter").forEach((b) => b.onclick = () => browseDir(project, b.dataset.dir));
+  mainEl.querySelectorAll("[data-url]").forEach((el) => {
+    el.onclick = (e) => { e.preventDefault(); viewFile(el.dataset.url, el.dataset.name); };
+  });
 }
 let _liveEs = null;
 let _liveStop = false;
@@ -1050,7 +1287,7 @@ function showVideos(project, outRoot) {
 
 // ---------------- 分析视图（模型→权重→项目 分级） ----------------
 async function analysisView() {
-  mainEl.innerHTML = `<h2>📈 分析（分级：模型 → 权重 → 项目）</h2>
+  mainEl.innerHTML = `<h2>${backButton()}📈 分析（分级：模型 → 权重 → 项目）</h2>
     <div class="card"><p class="hint">点击模型大类展开权重，再点权重展开各项目的推理/评估结果；勾选权重可对比覆盖率曲线；点「原始」看 metrics.json。metrics 是每次评估的记录（成功率/覆盖率等），不是权重文件。</p>
       <div class="toolbar"><button id="an-refresh">🔄 刷新</button><button id="an-chart-btn" class="secondary">📈 覆盖率曲线对比</button></div>
       <div id="an-list"></div>
@@ -1183,6 +1420,7 @@ async function analysisView() {
   $("#an-refresh").onclick = refresh;
   $("#an-chart-btn").onclick = drawCompare;
   refresh();
+  wireBackButtons();
 }
 
 // ---------------- 全局导航 ----------------
