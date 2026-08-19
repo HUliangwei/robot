@@ -92,3 +92,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 # END RLW V3 MANAGED
+
+# ============ Frontend generated artifacts ============
+gui/node_modules/
+gui/dist/
+gui/*.tsbuildinfo
