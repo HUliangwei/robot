@@ -25,6 +25,29 @@ export type JobDetail = {
   attempts: AttemptDetail[]
 }
 
+export type RecordDocument = {
+  schema_version: 'rlw.record_document/v1'
+  kind: 'manifest' | 'run_spec' | 'resolved_config' | 'lineage'
+  path: string
+  format: 'json' | 'yaml'
+  source: 'file' | 'manifest_embedded' | 'unavailable'
+  available: boolean
+  content: any
+  error?: string
+}
+
+export type ArtifactReplica = {
+  node_id?: string
+  node?: string
+  uri?: string
+  state?: string
+  digest?: string
+  size_bytes?: number
+  persistent?: boolean
+  cache?: boolean
+  pinned?: boolean
+}
+
 export type LifecycleEvent = {
   event_id: string
   event_type: string
@@ -39,6 +62,7 @@ export type LifecycleEvent = {
 export type RunObservability = {
   schema_version: 'rlw.run_observability/v1'
   run: Record<string, any>
+  documents: Record<'manifest' | 'run_spec' | 'resolved_config' | 'lineage', RecordDocument>
   jobs: JobDetail[]
   events: LifecycleEvent[]
   artifacts: Array<Record<string, any>>
@@ -58,6 +82,35 @@ export function buildRunObservabilityPath(runId: string): string {
   const normalized = runId.trim()
   if (!normalized) throw new Error('Run ID is required')
   return `/runs/${encodeURIComponent(normalized)}/observability`
+}
+
+export function buildRunActionPath(
+  runId: string,
+  action: 'execute' | 'reconcile',
+): string {
+  const normalized = runId.trim()
+  if (!normalized) throw new Error('Run ID is required')
+  return `/runs/${encodeURIComponent(normalized)}/${action}`
+}
+
+export function shouldPollRunObservability(
+  detail: RunObservability | null,
+  activeRunId: string,
+): boolean {
+  if (!detail || detail.run.run_id !== activeRunId) return false
+  if (detail.run.status === 'RUNNING') return true
+  return detail.jobs.some(({ attempts }) =>
+    attempts.some(({ attempt }) => attempt.state === 'RUNNING'),
+  )
+}
+
+export function formatDocumentContent(document: RecordDocument): string {
+  if (!document.available) return document.error ?? 'Document unavailable'
+  return JSON.stringify(document.content, null, 2)
+}
+
+export function getArtifactReplicas(artifact: Record<string, any>): ArtifactReplica[] {
+  return Array.isArray(artifact.replicas) ? artifact.replicas : []
 }
 
 export function formatFailure(failure: FailureDetail): string {

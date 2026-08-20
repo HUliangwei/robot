@@ -37,7 +37,19 @@ options.
 
 On the **运行 Runs** page, choose **查看详情 Inspect** to load the shared
 Run observability view: lifecycle events, Job/Attempt state, bounded
-stdout/stderr tails, failure guidance, Artifacts, and Metrics. The equivalent
-root-scoped CLI command is `rlw run inspect RUN_ID`.
+stdout/stderr tails, failure guidance, portable Run documents, Artifact
+Replicas, Artifacts, and Metrics. Active local Runs refresh automatically with
+one bounded request at a time.
+
+Use **预检 Preflight** first. A passing report enables **确认执行 Execute**,
+which requires an exact Run-ID confirmation. **重对账 Reconcile** repeats safe
+Artifact/Metric discovery. Equivalent root-scoped commands are:
+
+```powershell
+rlw run preflight RUN_ID
+rlw run execute RUN_ID
+rlw run reconcile RUN_ID
+rlw run inspect RUN_ID
+```
 
 The GUI must never spawn LeRobot, SSH, rsync, or local training processes directly. Add business behavior in Application Services and expose it through the API.

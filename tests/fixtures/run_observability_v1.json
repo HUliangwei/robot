@@ -1,0 +1,68 @@
+{
+  "schema_version": "rlw.run_observability/v1",
+  "run": {
+    "schema_version": "rlw.run_manifest/v1",
+    "run_id": "run_contract",
+    "status": "RUNNING",
+    "resolved_config": {"seed": 7},
+    "lineage": {"parents": []}
+  },
+  "documents": {
+    "manifest": {
+      "schema_version": "rlw.record_document/v1",
+      "kind": "manifest",
+      "path": "runs/run_contract/manifest.json",
+      "format": "json",
+      "source": "file",
+      "available": true,
+      "content": {
+        "schema_version": "rlw.run_manifest/v1",
+        "run_id": "run_contract",
+        "status": "RUNNING",
+        "resolved_config": {"seed": 7},
+        "lineage": {"parents": []}
+      }
+    },
+    "run_spec": {
+      "schema_version": "rlw.record_document/v1",
+      "kind": "run_spec",
+      "path": "runs/run_contract/manifest.json",
+      "format": "yaml",
+      "source": "unavailable",
+      "available": false,
+      "content": null,
+      "error": "document is not recorded"
+    },
+    "resolved_config": {
+      "schema_version": "rlw.record_document/v1",
+      "kind": "resolved_config",
+      "path": "runs/run_contract/manifest.json",
+      "format": "yaml",
+      "source": "manifest_embedded",
+      "available": true,
+      "content": {"seed": 7}
+    },
+    "lineage": {
+      "schema_version": "rlw.record_document/v1",
+      "kind": "lineage",
+      "path": "runs/run_contract/manifest.json",
+      "format": "json",
+      "source": "manifest_embedded",
+      "available": true,
+      "content": {"parents": []}
+    }
+  },
+  "jobs": [],
+  "events": [],
+  "artifacts": [],
+  "metrics": [],
+  "summary": {
+    "jobs": 0,
+    "attempts": 0,
+    "artifacts": 0,
+    "metrics": 0,
+    "events": 0,
+    "failures": 0,
+    "latest_event_type": null
+  }
+}

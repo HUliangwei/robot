@@ -103,7 +103,7 @@
 
 ### Task 11: Complete the remaining local GUI acceptance details
 
-- [ ] Add portable resolved-config, manifest, lineage, and Artifact Replica detail sections.
-- [ ] Route local Job execute/reconcile actions through Application Services and guarded API/GUI actions.
-- [ ] Add bounded polling for running local Attempts while retaining the stable observability schema.
-- [ ] Validate CLI/API/GUI equality against the same canonical Run fixture before any Remote work.
+- [x] Add portable resolved-config, manifest, lineage, and Artifact Replica detail sections.
+- [x] Route local Job execute/reconcile actions through Application Services and guarded API/GUI actions.
+- [x] Add bounded polling for running local Attempts while retaining the stable observability schema.
+- [x] Validate CLI/API/GUI equality against the same canonical Run fixture before any Remote work.

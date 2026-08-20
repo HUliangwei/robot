@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from workbench.api.app import create_app
+from workbench.services.observability import RunObservabilityService
 from workbench.storage.catalog import Catalog
 from workbench.storage.manifests import atomic_write_json
 
@@ -159,3 +160,51 @@ def test_run_observability_api_returns_404_for_a_missing_run(tmp_path):
 
     assert response.status_code == 404
     assert "does not exist" in response.json()["detail"]
+
+
+def test_run_observability_api_equals_the_shared_service(tmp_path):
+    atomic_write_json(tmp_path / "runs" / "run_equal" / "manifest.json", {"schema_version": "rlw.run_manifest/v1", "run_id": "run_equal", "status": "READY"})
+
+    response = TestClient(create_app(tmp_path)).get("/api/v1/runs/run_equal/observability")
+
+    assert response.status_code == 200
+    assert response.json() == RunObservabilityService(tmp_path).inspect("run_equal")
+
+
+def test_execute_api_requires_confirmation_and_accepts_a_ready_run(tmp_path, monkeypatch):
+    atomic_write_json(tmp_path / "runs" / "run_execute" / "manifest.json", {"schema_version": "rlw.run_manifest/v1", "run_id": "run_execute", "status": "READY"})
+    monkeypatch.setattr(
+        "workbench.services.run_actions.GoldenPathService.execute",
+        lambda self, run_id: {"run_id": run_id, "state": "SUCCEEDED"},
+    )
+    client = TestClient(create_app(tmp_path))
+
+    mismatch = client.post("/api/v1/runs/run_execute/execute", json={"confirmation": "wrong"})
+    accepted = client.post("/api/v1/runs/run_execute/execute", json={"confirmation": "run_execute"})
+
+    assert mismatch.status_code == 400
+    assert accepted.status_code == 202
+    assert accepted.json() == {"schema_version": "rlw.run_execution_request/v1", "run_id": "run_execute", "status": "ACCEPTED"}
+
+
+def test_execute_api_maps_missing_and_invalid_state(tmp_path):
+    client = TestClient(create_app(tmp_path))
+    missing = client.post("/api/v1/runs/run_missing/execute", json={"confirmation": "run_missing"})
+    atomic_write_json(tmp_path / "runs" / "run_busy" / "manifest.json", {"schema_version": "rlw.run_manifest/v1", "run_id": "run_busy", "status": "RUNNING"})
+    busy = client.post("/api/v1/runs/run_busy/execute", json={"confirmation": "run_busy"})
+
+    assert missing.status_code == 404
+    assert busy.status_code == 409
+
+
+def test_reconcile_api_uses_the_local_action_service(tmp_path, monkeypatch):
+    atomic_write_json(tmp_path / "runs" / "run_reconcile" / "manifest.json", {"schema_version": "rlw.run_manifest/v1", "run_id": "run_reconcile", "status": "SUCCEEDED"})
+    monkeypatch.setattr(
+        "workbench.services.run_actions.GoldenPathService.discover",
+        lambda self, run_id: {"schema_version": "rlw.golden_discover/v1", "run_id": run_id, "artifacts": 0, "metrics": 0},
+    )
+
+    response = TestClient(create_app(tmp_path)).post("/api/v1/runs/run_reconcile/reconcile", json={})
+
+    assert response.status_code == 200
+    assert response.json()["schema_version"] == "rlw.golden_discover/v1"

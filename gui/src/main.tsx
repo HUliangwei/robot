@@ -6,9 +6,13 @@ import {
   type MetricComparison,
 } from './metricComparison'
 import {
+  buildRunActionPath,
   buildRunObservabilityPath,
+  formatDocumentContent,
   formatFailure,
   formatLogTail,
+  getArtifactReplicas,
+  shouldPollRunObservability,
   type RunObservability,
 } from './runObservability'
 import './styles.css'
@@ -88,6 +92,8 @@ function App() {
   const [comparison, setComparison] = useState<MetricComparison | null>(null)
   const [observability, setObservability] = useState<RunObservability | null>(null)
   const [inspectingRun, setInspectingRun] = useState('')
+  const [actionRun, setActionRun] = useState('')
+  const [acceptedExecution, setAcceptedExecution] = useState<{ runId: string; until: number } | null>(null)
 
   const refresh = () => Promise.all([
     getJson<Overview>('/overview'),
@@ -154,15 +160,52 @@ function App() {
     }
   }
 
-  const inspectRun = async (runId: string) => {
-    setInspectingRun(runId)
+  const inspectRun = async (runId: string, showBusy = true) => {
+    if (showBusy) setInspectingRun(runId)
     try {
       setObservability(await getJson<RunObservability>(buildRunObservabilityPath(runId)))
       setError('')
     } catch (e) {
       setError(`运行详情加载失败 Run inspect failed: ${String(e)}`)
     } finally {
-      setInspectingRun('')
+      if (showBusy) setInspectingRun('')
+    }
+  }
+
+  useEffect(() => {
+    const runId = String(observability?.run.run_id ?? '')
+    const awaitingStart = acceptedExecution?.runId === runId && Date.now() < acceptedExecution.until
+    if (!runId || (!awaitingStart && !shouldPollRunObservability(observability, runId))) return
+    const timer = window.setTimeout(() => { void inspectRun(runId, false) }, 3000)
+    return () => window.clearTimeout(timer)
+  }, [observability, acceptedExecution])
+
+  const executeRun = async (runId: string) => {
+    if (!preflight[runId]?.ok) return
+    if (!window.confirm(`确认执行本地 Run？\nConfirm local execution:\n${runId}`)) return
+    setActionRun(runId)
+    try {
+      await postJson(buildRunActionPath(runId, 'execute'), { confirmation: runId })
+      setAcceptedExecution({ runId, until: Date.now() + 90_000 })
+      setMessage(`执行请求已接收 Execution accepted: ${runId}`)
+      await inspectRun(runId, false)
+    } catch (e) {
+      setError(`执行请求失败 Execute request failed: ${String(e)}`)
+    } finally {
+      setActionRun('')
+    }
+  }
+
+  const reconcileRun = async (runId: string) => {
+    setActionRun(runId)
+    try {
+      await postJson(buildRunActionPath(runId, 'reconcile'))
+      setMessage(`重对账完成 Reconciled: ${runId}`)
+      await Promise.all([inspectRun(runId, false), refresh()])
+    } catch (e) {
+      setError(`重对账失败 Reconcile failed: ${String(e)}`)
+    } finally {
+      setActionRun('')
     }
   }
 
@@ -209,7 +252,7 @@ function App() {
             <button className="primary" onClick={prepare} disabled={!revision.trim()}>准备 PushT ACT 运行 Prepare Run</button>
           </div>
           {message && <p className="muted">{message}</p>}
-          <p className="muted">执行前先做预检 Preflight；长时间训练仍从 CLI 执行：<code>rlw golden execute &lt;run_id&gt;</code></p>
+          <p className="muted">执行前先做预检 Preflight；可在 Runs 页面确认执行，也可从项目根目录使用 <code>rlw run execute &lt;RUN_ID&gt;</code>。</p>
         </section>
       </>}
 
@@ -218,10 +261,14 @@ function App() {
           items={runs}
           preflight={preflight}
           busyRun={busyRun}
+          actionRun={actionRun}
           inspectingRun={inspectingRun}
           onPreflight={runPreflight}
           onInspect={inspectRun}
+          onExecute={executeRun}
+          onReconcile={reconcileRun}
         />
+        {message && <p className="actionMessage">{message}</p>}
         {observability && <RunObservabilityPanel detail={observability} />}
       </>}
       {tab === 'jobs' && <JobRecords jobs={jobs} attempts={attempts} />}
@@ -244,7 +291,7 @@ function Card({ label, value }: { label: string; value: React.ReactNode }) {
   return <div className="card"><div className="label">{label}</div><div className="value">{value}</div></div>
 }
 
-function RunRecords({ items, preflight, busyRun, inspectingRun, onPreflight, onInspect }: { items: any[]; preflight: Record<string, Preflight>; busyRun: string; inspectingRun: string; onPreflight: (runId: string) => void; onInspect: (runId: string) => void }) {
+function RunRecords({ items, preflight, busyRun, actionRun, inspectingRun, onPreflight, onInspect, onExecute, onReconcile }: { items: any[]; preflight: Record<string, Preflight>; busyRun: string; actionRun: string; inspectingRun: string; onPreflight: (runId: string) => void; onInspect: (runId: string) => void; onExecute: (runId: string) => void; onReconcile: (runId: string) => void }) {
   return <section className="panel">
     <div className="panelTitle">标准运行 Canonical Runs</div>
     {items.length === 0 ? <p className="muted">暂无运行 No runs yet.</p> : <div className="records">
@@ -257,6 +304,8 @@ function RunRecords({ items, preflight, busyRun, inspectingRun, onPreflight, onI
           <div className="runActions">
             <button className="secondary" onClick={() => onPreflight(run.run_id)} disabled={busyRun === run.run_id}>{busyRun === run.run_id ? '预检中 Checking…' : '预检 Preflight'}</button>
             <button className="secondary" onClick={() => onInspect(run.run_id)} disabled={inspectingRun === run.run_id}>{inspectingRun === run.run_id ? '加载中 Loading…' : '查看详情 Inspect'}</button>
+            <button className="primary" onClick={() => onExecute(run.run_id)} disabled={!report?.ok || actionRun === run.run_id}>{actionRun === run.run_id ? '处理中 Working…' : '确认执行 Execute'}</button>
+            <button className="secondary" onClick={() => onReconcile(run.run_id)} disabled={actionRun === run.run_id}>重对账 Reconcile</button>
           </div>
           {report && <PreflightPanel report={report} />}
         </div>
@@ -274,6 +323,15 @@ function RunObservabilityPanel({ detail }: { detail: RunObservability }) {
       <span className="chip">产物 Artifacts {detail.summary.artifacts}</span>
       <span className="chip">指标 Metrics {detail.summary.metrics}</span>
       <span className={detail.summary.failures ? 'chip failureChip' : 'chip'}>失败 Failures {detail.summary.failures}</span>
+    </div>
+
+    <div className="detailSection">
+      <h3>可移植运行记录 Portable Run Documents</h3>
+      <div className="documentGrid">{Object.values(detail.documents).map(document => <div className="documentCard" key={document.kind}>
+        <div><b>{document.kind}</b><span className={document.available ? 'ok' : 'bad'}>{document.source}</span></div>
+        <div className="muted mono">{document.path}</div>
+        <pre>{formatDocumentContent(document)}</pre>
+      </div>)}</div>
     </div>
 
     <div className="detailSection">
@@ -306,7 +364,10 @@ function RunObservabilityPanel({ detail }: { detail: RunObservability }) {
     </div>
 
     <div className="detailColumns">
-      <div className="detailSection"><h3>产物 Artifacts</h3>{detail.artifacts.length === 0 ? <p className="muted">暂无产物 No artifacts.</p> : detail.artifacts.map(item => <div className="compactRecord" key={item.artifact_id}><b>{item.kind}</b><span>{item.display_name ?? item.artifact_id}</span><span className="mono">{item.artifact_id}</span></div>)}</div>
+      <div className="detailSection"><h3>产物与副本 Artifacts & Replicas</h3>{detail.artifacts.length === 0 ? <p className="muted">暂无产物 No artifacts.</p> : detail.artifacts.map(item => <div className="artifactDetail" key={item.artifact_id}><div className="compactRecord"><b>{item.kind}</b><span>{item.display_name ?? item.artifact_id}</span><span className="mono">{item.artifact_id}</span></div>{getArtifactReplicas(item).length === 0 ? <p className="muted replicaEmpty">无副本信息 No Replica facts.</p> : getArtifactReplicas(item).map((replica, index) => <div className="replicaRecord" key={`${replica.uri ?? 'replica'}-${index}`}>
+        <b>{replica.node_id ?? replica.node ?? 'unknown node'}</b><span>{replica.state ?? 'UNKNOWN'}</span><span className="mono">{replica.uri ?? '—'}</span>
+        <small>digest {replica.digest ?? '—'} · bytes {String(replica.size_bytes ?? '—')} · persistent {String(replica.persistent ?? '—')} · cache {String(replica.cache ?? '—')} · pinned {String(replica.pinned ?? '—')}</small>
+      </div>)}</div>)}</div>
       <div className="detailSection"><h3>指标 Metrics</h3>{detail.metrics.length === 0 ? <p className="muted">暂无指标 No metrics.</p> : detail.metrics.map(item => <div className="compactRecord" key={item.metric_id}><b>{item.name}</b><span>{String(item.value)}</span><span>{item.unit ?? item.scope ?? ''}</span></div>)}</div>
     </div>
   </section>

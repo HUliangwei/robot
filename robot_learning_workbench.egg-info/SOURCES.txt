@@ -21,9 +21,11 @@ tests/test_local_executor.py
 tests/test_manifests.py
 tests/test_observability.py
 tests/test_round_transcript_r8_1.py
+tests/test_run_actions.py
 tests/test_runtime_contract_r8.py
 tests/test_test_runner_r8.py
 tests/test_transitions.py
+tests/fixtures/run_observability_v1.json
 workbench/__init__.py
 workbench/api/__init__.py
 workbench/api/app.py
@@ -48,6 +50,7 @@ workbench/services/legacy.py
 workbench/services/observability.py
 workbench/services/overview.py
 workbench/services/provider_doctor.py
+workbench/services/run_actions.py
 workbench/services/test_runner.py
 workbench/storage/__init__.py
 workbench/storage/catalog.py

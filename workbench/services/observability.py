@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from workbench.core.ids import new_id
 from workbench.storage.manifests import read_json
 
@@ -139,6 +141,104 @@ class RunObservabilityService:
             "truncated": line_count > tail_lines,
         }
 
+    def _document(
+        self,
+        run_dir: Path,
+        kind: str,
+        raw_path: Any,
+        document_format: str,
+        *,
+        embedded: Any = None,
+    ) -> dict[str, Any]:
+        manifest_path = (run_dir / "manifest.json").relative_to(self.root).as_posix()
+        base = {
+            "schema_version": "rlw.record_document/v1",
+            "kind": kind,
+            "path": str(raw_path or manifest_path),
+            "format": document_format,
+        }
+        if raw_path:
+            candidate = Path(str(raw_path))
+            if not candidate.is_absolute():
+                candidate = self.root / candidate
+            resolved = candidate.resolve()
+            if not resolved.is_relative_to(run_dir):
+                return {
+                    **base,
+                    "source": "unavailable",
+                    "available": False,
+                    "content": None,
+                    "error": "document path is outside the Run directory",
+                }
+            base["path"] = resolved.relative_to(self.root).as_posix()
+            if resolved.is_file():
+                try:
+                    if document_format == "json":
+                        content = read_json(resolved)
+                    else:
+                        content = yaml.safe_load(resolved.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError, yaml.YAMLError) as exc:
+                    return {
+                        **base,
+                        "source": "unavailable",
+                        "available": False,
+                        "content": None,
+                        "error": f"document could not be read: {exc}",
+                    }
+                return {
+                    **base,
+                    "source": "file",
+                    "available": True,
+                    "content": content,
+                }
+        if embedded is not None:
+            return {
+                **base,
+                "path": manifest_path,
+                "source": "manifest_embedded",
+                "available": True,
+                "content": embedded,
+            }
+        return {
+            **base,
+            "source": "unavailable",
+            "available": False,
+            "content": None,
+            "error": "document is not recorded",
+        }
+
+    def _documents(
+        self, run_dir: Path, manifest: dict[str, Any]
+    ) -> dict[str, dict[str, Any]]:
+        manifest_rel = (run_dir / "manifest.json").relative_to(self.root).as_posix()
+        paths = manifest.get("paths") if isinstance(manifest.get("paths"), dict) else {}
+        return {
+            "manifest": {
+                "schema_version": "rlw.record_document/v1",
+                "kind": "manifest",
+                "path": manifest_rel,
+                "format": "json",
+                "source": "file",
+                "available": True,
+                "content": manifest,
+            },
+            "run_spec": self._document(run_dir, "run_spec", paths.get("run_spec"), "yaml"),
+            "resolved_config": self._document(
+                run_dir,
+                "resolved_config",
+                paths.get("resolved_config"),
+                "yaml",
+                embedded=manifest.get("resolved_config"),
+            ),
+            "lineage": self._document(
+                run_dir,
+                "lineage",
+                paths.get("lineage"),
+                "json",
+                embedded=manifest.get("lineage"),
+            ),
+        }
+
     @staticmethod
     def _failure(attempt: dict[str, Any]) -> dict[str, Any] | None:
         configured = attempt.get("error")
@@ -212,6 +312,7 @@ class RunObservabilityService:
         return {
             "schema_version": "rlw.run_observability/v1",
             "run": manifest,
+            "documents": self._documents(run_dir, manifest),
             "jobs": jobs,
             "events": events,
             "artifacts": artifacts,

@@ -100,14 +100,27 @@ Useful control-plane checks:
 rlw system doctor
 rlw catalog rebuild
 rlw system overview
+rlw run preflight RUN_ID
+rlw run execute RUN_ID
+rlw run reconcile RUN_ID
 rlw run inspect RUN_ID
 rlw evaluation compare RUN_A RUN_B
 ```
 
+The local Run flow is **Preflight → Execute → Inspect → Reconcile**. `execute`
+repeats the required preflight checks before starting the Provider process;
+`reconcile` safely re-discovers generated Artifact and Metric records and may
+be repeated. The Runs page exposes the same actions. GUI execution stays locked
+until its Preflight result passes, then requires confirmation of the exact Run
+ID. CLI execution asks for the same explicit Run target in the command.
+
 `rlw run inspect RUN_ID` and the GUI's **查看详情 Inspect** action use the
 same observability service. They show Run lifecycle events, durable Jobs and
 ExecutionAttempts, bounded stdout/stderr tails, failure category and guidance,
-Artifacts, and Metrics. Add `--json` when another tool needs the stable
+portable manifest/run specification/resolved configuration/lineage documents,
+Artifact Replica facts, Artifacts, and Metrics. While a local Run is active,
+the GUI refreshes this shared detail without overlapping requests. Add `--json`
+when another tool needs the stable
 `rlw.run_observability/v1` response.
 
 ## Development order

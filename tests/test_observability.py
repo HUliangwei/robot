@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 from workbench.services.observability import (
     LifecycleEventWriter,
@@ -217,3 +218,81 @@ def test_run_observability_keeps_pre_r9_embedded_jobs_visible(tmp_path: Path):
         }
     ]
     assert detail["summary"]["jobs"] == 1
+
+
+def test_run_observability_projects_portable_documents_and_replica_facts(tmp_path: Path):
+    run_id = "run_portable"
+    run_dir = tmp_path / "runs" / run_id
+    manifest = {
+        "schema_version": "rlw.run_manifest/v1",
+        "run_id": run_id,
+        "status": "SUCCEEDED",
+        "paths": {
+            "run_spec": f"runs/{run_id}/run.yaml",
+            "resolved_config": f"runs/{run_id}/resolved_config.yaml",
+            "lineage": f"runs/{run_id}/lineage.json",
+        },
+    }
+    run_spec = {"schema_version": "rlw.run_spec/v1", "experiment": {"name": "portable"}}
+    resolved = {"schema_version": "rlw.resolved_config/v1", "run_id": run_id, "seed": 7}
+    lineage = {"schema_version": "rlw.lineage/v1", "run_id": run_id, "parents": []}
+    atomic_write_json(run_dir / "manifest.json", manifest)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "run.yaml").write_text(yaml.safe_dump(run_spec), encoding="utf-8")
+    (run_dir / "resolved_config.yaml").write_text(yaml.safe_dump(resolved), encoding="utf-8")
+    atomic_write_json(run_dir / "lineage.json", lineage)
+    replica = {
+        "schema_version": "rlw.artifact_replica/v1",
+        "node_id": "local",
+        "uri": "file:///project/runs/run_portable/artifacts/model",
+        "state": "AVAILABLE",
+        "digest": "sha256:abc",
+        "size_bytes": 123,
+        "persistent": True,
+        "cache": False,
+        "pinned": True,
+    }
+    atomic_write_json(
+        run_dir / "records" / "artifacts" / "artifact_model" / "artifact.json",
+        {
+            "schema_version": "rlw.artifact/v1",
+            "artifact_id": "artifact_model",
+            "kind": "checkpoint",
+            "replicas": [replica],
+        },
+    )
+
+    detail = RunObservabilityService(tmp_path).inspect(run_id)
+
+    assert detail["documents"] == {
+        "manifest": {"schema_version": "rlw.record_document/v1", "kind": "manifest", "path": f"runs/{run_id}/manifest.json", "format": "json", "source": "file", "available": True, "content": manifest},
+        "run_spec": {"schema_version": "rlw.record_document/v1", "kind": "run_spec", "path": f"runs/{run_id}/run.yaml", "format": "yaml", "source": "file", "available": True, "content": run_spec},
+        "resolved_config": {"schema_version": "rlw.record_document/v1", "kind": "resolved_config", "path": f"runs/{run_id}/resolved_config.yaml", "format": "yaml", "source": "file", "available": True, "content": resolved},
+        "lineage": {"schema_version": "rlw.record_document/v1", "kind": "lineage", "path": f"runs/{run_id}/lineage.json", "format": "json", "source": "file", "available": True, "content": lineage},
+    }
+    assert detail["artifacts"][0]["replicas"] == [replica]
+
+
+def test_run_observability_falls_back_to_embedded_portable_facts(tmp_path: Path):
+    manifest = {"schema_version": "rlw.run_manifest/v1", "run_id": "run_embedded", "status": "READY", "resolved_config": {"seed": 42}, "lineage": {"parents": ["artifact_parent"]}}
+    atomic_write_json(tmp_path / "runs" / "run_embedded" / "manifest.json", manifest)
+
+    documents = RunObservabilityService(tmp_path).inspect("run_embedded")["documents"]
+
+    assert documents["resolved_config"]["source"] == "manifest_embedded"
+    assert documents["resolved_config"]["content"] == {"seed": 42}
+    assert documents["lineage"]["source"] == "manifest_embedded"
+    assert documents["lineage"]["content"] == {"parents": ["artifact_parent"]}
+    assert documents["run_spec"]["available"] is False
+    assert documents["run_spec"]["content"] is None
+
+
+def test_run_observability_never_reads_document_paths_outside_the_run(tmp_path: Path):
+    (tmp_path / "secret.yaml").write_text("secret: should-not-be-read\n", encoding="utf-8")
+    atomic_write_json(tmp_path / "runs" / "run_safe" / "manifest.json", {"schema_version": "rlw.run_manifest/v1", "run_id": "run_safe", "status": "READY", "paths": {"resolved_config": "secret.yaml"}})
+
+    document = RunObservabilityService(tmp_path).inspect("run_safe")["documents"]["resolved_config"]
+
+    assert document["available"] is False
+    assert document["content"] is None
+    assert document["error"] == "document path is outside the Run directory"

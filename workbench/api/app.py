@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -15,6 +15,7 @@ from workbench.services.legacy import scan_legacy_workspace
 from workbench.services.overview import build_overview
 from workbench.services.observability import RunObservabilityService
 from workbench.services.provider_doctor import run_provider_doctor
+from workbench.services.run_actions import LocalRunActionService, RunStateError
 from workbench.storage.catalog import Catalog
 from workbench.storage.paths import ensure_runtime_dirs, find_project_root
 
@@ -23,6 +24,10 @@ class GoldenPrepareRequest(BaseModel):
     dataset_revision: str
     recipe: str = "recipes/train/pusht_act.yaml"
     provider_env: str = "lerobot-win"
+
+
+class RunExecuteRequest(BaseModel):
+    confirmation: str
 
 
 def create_app(root: str | Path | None = None) -> FastAPI:
@@ -132,6 +137,32 @@ def create_app(root: str | Path | None = None) -> FastAPI:
             return GoldenPathService(project_root).preflight(run_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post(
+        "/api/v1/runs/{run_id}/execute",
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def execute(run_id: str, req: RunExecuteRequest, background_tasks: BackgroundTasks):
+        actions = LocalRunActionService(project_root)
+        try:
+            accepted = actions.validate_execute(run_id, req.confirmation)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except RunStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        background_tasks.add_task(actions.execute, run_id)
+        return accepted
+
+    @app.post("/api/v1/runs/{run_id}/reconcile")
+    def reconcile(run_id: str):
+        try:
+            return LocalRunActionService(project_root).reconcile(run_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/v1/runs/{run_id}/discover")
     def discover(run_id: str):
