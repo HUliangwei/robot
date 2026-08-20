@@ -61,18 +61,11 @@ def create_app(root: str | Path | None = None) -> FastAPI:
 
     @app.get("/api/v1/jobs")
     def jobs():
-        import json
-        items = []
-        state_root = project_root / ".rlw" / "state" / "jobs"
-        if state_root.exists():
-            for path in sorted(state_root.rglob("attempt.json"), reverse=True)[:200]:
-                try:
-                    item = json.loads(path.read_text(encoding="utf-8"))
-                    item["_source_path"] = path.relative_to(project_root).as_posix()
-                    items.append(item)
-                except Exception:
-                    pass
-        return {"items": items}
+        return {"items": catalog.list_records("job")}
+
+    @app.get("/api/v1/attempts")
+    def attempts():
+        return {"items": catalog.list_records("attempt")}
 
     @app.get("/api/v1/providers")
     def providers():

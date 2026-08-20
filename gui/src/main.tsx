@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { buildJobRows, type AttemptRecord, type JobRecord } from './jobRecords'
 import './styles.css'
 
 type Overview = {
   node: { id: string; capabilities: Record<string, boolean> }
-  catalog: { runs: number; datasets: number; total_records: number }
+  catalog: { runs: number; datasets: number; jobs: number; attempts: number; total_records: number }
   legacy: { projects: number; project_names: string[] }
 }
 type Doctor = { platform: string; checks: Record<string, { ok: boolean; value?: string | null }> }
@@ -65,6 +66,8 @@ function App() {
   const [runs, setRuns] = useState<any[]>([])
   const [datasets, setDatasets] = useState<any[]>([])
   const [artifacts, setArtifacts] = useState<any[]>([])
+  const [jobs, setJobs] = useState<JobRecord[]>([])
+  const [attempts, setAttempts] = useState<AttemptRecord[]>([])
   const [error, setError] = useState('')
   const [tab, setTab] = useState('overview')
   const [revision, setRevision] = useState('')
@@ -78,12 +81,16 @@ function App() {
     getJson<ListResponse>('/runs'),
     getJson<ListResponse>('/datasets'),
     getJson<ListResponse>('/artifacts'),
-  ]).then(([o, d, r, ds, a]) => {
+    getJson<ListResponse>('/jobs'),
+    getJson<ListResponse>('/attempts'),
+  ]).then(([o, d, r, ds, a, j, at]) => {
     setOverview(o)
     setDoctor(d)
     setRuns(r.items)
     setDatasets(ds.items)
     setArtifacts(a.items)
+    setJobs(j.items)
+    setAttempts(at.items)
     setError('')
   }).catch(e => setError(String(e)))
 
@@ -117,6 +124,7 @@ function App() {
   const tabs = [
     ['overview', '总览 Overview'],
     ['runs', '运行 Runs'],
+    ['jobs', '任务与尝试 Jobs / Attempts'],
     ['datasets', '数据集 Datasets'],
     ['artifacts', '产物 Artifacts'],
     ['legacy', '遗留资产 Legacy Assets'],
@@ -141,6 +149,8 @@ function App() {
         <section className="grid">
           <Card label="运行记录 Catalog Runs" value={overview?.catalog.runs ?? '—'} />
           <Card label="数据集版本 Dataset Revisions" value={overview?.catalog.datasets ?? '—'} />
+          <Card label="任务 Jobs" value={overview?.catalog.jobs ?? '—'} />
+          <Card label="执行尝试 ExecutionAttempts" value={overview?.catalog.attempts ?? '—'} />
           <Card label="遗留项目 Legacy Projects" value={overview?.legacy.projects ?? '—'} />
           <Card label="检测项 Doctor Checks" value={doctor ? `${ok}/${Object.keys(doctor.checks).length}` : '—'} />
         </section>
@@ -158,6 +168,7 @@ function App() {
       </>}
 
       {tab === 'runs' && <RunRecords items={runs} preflight={preflight} busyRun={busyRun} onPreflight={runPreflight} />}
+      {tab === 'jobs' && <JobRecords jobs={jobs} attempts={attempts} />}
       {tab === 'datasets' && <Records title="数据集版本 Dataset Revisions" empty="暂无数据集版本 No dataset revisions yet." items={datasets} keys={['dataset_id', 'revision', 'immutable']} />}
       {tab === 'artifacts' && <Records title="产物 Artifacts" empty="暂无产物 No artifacts yet." items={artifacts} keys={['artifact_id', 'kind', 'display_name', 'producer_run']} />}
       {tab === 'legacy' && <section className="panel"><div className="panelTitle">检测到的遗留项目 Detected Legacy Projects</div><div className="chips">{overview?.legacy.project_names.map(x => <span className="chip" key={x}>{x}</span>)}</div></section>}
@@ -197,6 +208,28 @@ function PreflightPanel({ report }: { report: Preflight }) {
       <small>{item.required ? '必需 Required' : '建议 Advisory'}</small>
     </div>)}</div>
   </div>
+}
+
+function JobRecords({ jobs, attempts }: { jobs: JobRecord[]; attempts: AttemptRecord[] }) {
+  const rows = useMemo(() => buildJobRows(jobs, attempts), [jobs, attempts])
+  return <section className="panel">
+    <div className="panelTitle">任务与执行尝试 Jobs / ExecutionAttempts</div>
+    {rows.length === 0 ? <p className="muted">暂无持久任务记录 No durable Job records yet.</p> : <div className="records">
+      {rows.map(({ job, attempts: jobAttempts }) => <div className="record jobRecord" key={job.job_id}>
+        <div><span className="recordKey">任务 ID Job ID</span><span className="mono">{job.job_id}</span></div>
+        <div><span className="recordKey">运行 Run</span><span className="mono">{job.run_id}</span></div>
+        <div><span className="recordKey">类型 Kind</span><span>{job.kind}</span></div>
+        <div><span className="recordKey">状态 State</span><span>{job.state}</span></div>
+        <div className="attemptList"><span className="recordKey">执行尝试 Attempts</span><div>
+          {jobAttempts.length === 0 ? <span className="muted">尚未执行 Not executed</span> : jobAttempts.map(attempt => <div className="attemptRow" key={attempt.attempt_id}>
+            <span className="mono">{attempt.attempt_id}</span>
+            <span>{attempt.state}</span>
+            <span>exit {String(attempt.exit_code ?? '—')}</span>
+          </div>)}
+        </div></div>
+      </div>)}
+    </div>}
+  </section>
 }
 
 function Records({ title, empty, items, keys }: { title: string; empty: string; items: any[]; keys: string[] }) {

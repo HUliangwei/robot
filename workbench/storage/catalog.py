@@ -67,9 +67,16 @@ class Catalog:
             result.append(item)
         return result
 
-    def _index_json_records(self, root: Path, pattern: str, kind: str, id_key: str) -> int:
+    def _index_json_records(
+        self,
+        project_root: Path,
+        search_root: Path,
+        pattern: str,
+        kind: str,
+        id_key: str,
+    ) -> int:
         count = 0
-        for path in sorted(root.rglob(pattern)):
+        for path in sorted(search_root.rglob(pattern)):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
@@ -77,14 +84,14 @@ class Catalog:
             record_id = payload.get(id_key)
             if not record_id:
                 continue
-            self.upsert(kind, str(record_id), path.as_posix(), payload)
+            self.upsert(kind, str(record_id), path.relative_to(project_root).as_posix(), payload)
             count += 1
         return count
 
     def rebuild(self, root: str | Path) -> dict[str, int]:
         project_root = Path(root).resolve()
         self.clear()
-        summary = {"run": 0, "dataset": 0, "artifact": 0, "metric": 0}
+        summary = {"run": 0, "dataset": 0, "artifact": 0, "metric": 0, "job": 0, "attempt": 0}
 
         runs_root = project_root / "runs"
         if runs_root.exists():
@@ -115,6 +122,20 @@ class Catalog:
                 if metric_id:
                     self.upsert("metric", str(metric_id), path.relative_to(project_root).as_posix(), data)
                     summary["metric"] += 1
+            summary["job"] = self._index_json_records(
+                project_root,
+                runs_root,
+                "jobs/*/job.json",
+                "job",
+                "job_id",
+            )
+            summary["attempt"] = self._index_json_records(
+                project_root,
+                runs_root,
+                "jobs/*/attempts/*.json",
+                "attempt",
+                "attempt_id",
+            )
 
         datasets_root = project_root / "datasets"
         if datasets_root.exists():

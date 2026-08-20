@@ -22,6 +22,8 @@ def build_overview(root: str | Path) -> dict[str, Any]:
         "catalog": {
             "runs": catalog.count("run"),
             "datasets": catalog.count("dataset"),
+            "jobs": catalog.count("job"),
+            "attempts": catalog.count("attempt"),
             "total_records": catalog.count(),
         },
         "legacy": {

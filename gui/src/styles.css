@@ -15,3 +15,8 @@
 .warn { color: #b7852d; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; overflow-wrap: anywhere; }
 @media (max-width: 700px) { .preflightCheck { grid-template-columns: 18px 1fr; } .preflightCheck small { grid-column: 2; } }
+.jobRecord { gap: 8px; }
+.jobRecord .attemptList { align-items: start; }
+.attemptList > div { display: grid; gap: 6px; }
+.attemptRow { display: grid; grid-template-columns: minmax(180px, 1fr) 100px 80px; gap: 10px; padding: 7px 9px; background: #f6f8f9; border-radius: 7px; font-size: 12px; }
+@media (max-width: 700px) { .attemptRow { grid-template-columns: 1fr; } }

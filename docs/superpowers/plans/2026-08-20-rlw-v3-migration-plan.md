@@ -72,7 +72,7 @@
 
 ### Task 7: Next slice after migration
 
-- [ ] Convert **PushT + ACT + LeRobot + LocalExecutor** into the first canonical new Run flow.
-- [ ] Add resolved config + run manifest + lineage + durable Job/Attempt research metadata.
-- [ ] Discover/register checkpoint artifacts without copying upstream training logic.
+- [x] Convert **PushT + ACT + LeRobot + LocalExecutor** into the first canonical new Run flow.
+- [x] Add resolved config + run manifest + lineage + durable Job/Attempt research metadata.
+- [x] Discover/register checkpoint artifacts without copying upstream training logic.
 - [ ] Add Rollout/Evaluation/MetricRecord and compare the same operation via CLI and GUI.
