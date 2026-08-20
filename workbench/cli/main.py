@@ -16,6 +16,7 @@ from workbench.services.gui_launcher import (
 )
 from workbench.services.legacy import scan_legacy_workspace
 from workbench.services.overview import build_overview
+from workbench.services.observability import RunObservabilityService
 from workbench.services.provider_doctor import list_providers, run_provider_doctor
 from workbench.services.test_runner import run_pytest
 from workbench.storage.catalog import Catalog
@@ -215,6 +216,7 @@ Core workflow:
     for name, help_text in (
         ("show", "show Run metadata"),
         ("status", "show Run status"),
+        ("inspect", "inspect lifecycle, attempts, logs, artifacts, and metrics"),
         ("preflight", "validate Run execution preconditions"),
         ("execute", "execute the prepared train job"),
         ("reconcile", "discover and register produced artifacts/metrics"),
@@ -439,6 +441,30 @@ def main(argv: list[str] | None = None) -> int:
         if command in {"show", "status"}:
             result = _run_status(root, args.run_id)
             _emit("Run Status", "Inspect canonical Run metadata without executing it.", result, json_mode=json_mode)
+            return 0
+        if command == "inspect":
+            try:
+                result = RunObservabilityService(root).inspect(args.run_id)
+            except (FileNotFoundError, ValueError) as exc:
+                result = {
+                    "schema_version": "rlw.run_observability_error/v1",
+                    "run_id": args.run_id,
+                    "status": "error",
+                    "error": str(exc),
+                }
+                _emit(
+                    "Run Inspect",
+                    "The requested Run observability record is unavailable.",
+                    result,
+                    json_mode=json_mode,
+                )
+                return 2
+            _emit(
+                "Run Inspect",
+                "Inspect lifecycle events, attempts, logs, artifacts, metrics, and failures.",
+                result,
+                json_mode=json_mode,
+            )
             return 0
         if command == "preflight":
             result = service.preflight(args.run_id, probe_provider=not args.no_provider_probe)

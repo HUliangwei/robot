@@ -5,6 +5,12 @@ import {
   buildMetricComparisonPath,
   type MetricComparison,
 } from './metricComparison'
+import {
+  buildRunObservabilityPath,
+  formatFailure,
+  formatLogTail,
+  type RunObservability,
+} from './runObservability'
 import './styles.css'
 
 type Overview = {
@@ -80,6 +86,8 @@ function App() {
   const [busyRun, setBusyRun] = useState('')
   const [compareRunIds, setCompareRunIds] = useState<string[]>([])
   const [comparison, setComparison] = useState<MetricComparison | null>(null)
+  const [observability, setObservability] = useState<RunObservability | null>(null)
+  const [inspectingRun, setInspectingRun] = useState('')
 
   const refresh = () => Promise.all([
     getJson<Overview>('/overview'),
@@ -146,6 +154,18 @@ function App() {
     }
   }
 
+  const inspectRun = async (runId: string) => {
+    setInspectingRun(runId)
+    try {
+      setObservability(await getJson<RunObservability>(buildRunObservabilityPath(runId)))
+      setError('')
+    } catch (e) {
+      setError(`运行详情加载失败 Run inspect failed: ${String(e)}`)
+    } finally {
+      setInspectingRun('')
+    }
+  }
+
   const tabs = [
     ['overview', '总览 Overview'],
     ['runs', '运行 Runs'],
@@ -193,7 +213,17 @@ function App() {
         </section>
       </>}
 
-      {tab === 'runs' && <RunRecords items={runs} preflight={preflight} busyRun={busyRun} onPreflight={runPreflight} />}
+      {tab === 'runs' && <>
+        <RunRecords
+          items={runs}
+          preflight={preflight}
+          busyRun={busyRun}
+          inspectingRun={inspectingRun}
+          onPreflight={runPreflight}
+          onInspect={inspectRun}
+        />
+        {observability && <RunObservabilityPanel detail={observability} />}
+      </>}
       {tab === 'jobs' && <JobRecords jobs={jobs} attempts={attempts} />}
       {tab === 'evaluation' && <EvaluationCompare
         runs={runs}
@@ -214,7 +244,7 @@ function Card({ label, value }: { label: string; value: React.ReactNode }) {
   return <div className="card"><div className="label">{label}</div><div className="value">{value}</div></div>
 }
 
-function RunRecords({ items, preflight, busyRun, onPreflight }: { items: any[]; preflight: Record<string, Preflight>; busyRun: string; onPreflight: (runId: string) => void }) {
+function RunRecords({ items, preflight, busyRun, inspectingRun, onPreflight, onInspect }: { items: any[]; preflight: Record<string, Preflight>; busyRun: string; inspectingRun: string; onPreflight: (runId: string) => void; onInspect: (runId: string) => void }) {
   return <section className="panel">
     <div className="panelTitle">标准运行 Canonical Runs</div>
     {items.length === 0 ? <p className="muted">暂无运行 No runs yet.</p> : <div className="records">
@@ -224,11 +254,61 @@ function RunRecords({ items, preflight, busyRun, onPreflight }: { items: any[]; 
           <div><span className="recordKey">运行 ID Run ID</span><span>{run.run_id}</span></div>
           <div><span className="recordKey">状态 Status</span><span>{run.status}</span></div>
           <div><span className="recordKey">Git 提交 Git Commit</span><span className="mono">{run.git_commit ?? ''}</span></div>
-          <div className="runActions"><button className="secondary" onClick={() => onPreflight(run.run_id)} disabled={busyRun === run.run_id}>{busyRun === run.run_id ? '预检中 Checking…' : '预检 Preflight'}</button></div>
+          <div className="runActions">
+            <button className="secondary" onClick={() => onPreflight(run.run_id)} disabled={busyRun === run.run_id}>{busyRun === run.run_id ? '预检中 Checking…' : '预检 Preflight'}</button>
+            <button className="secondary" onClick={() => onInspect(run.run_id)} disabled={inspectingRun === run.run_id}>{inspectingRun === run.run_id ? '加载中 Loading…' : '查看详情 Inspect'}</button>
+          </div>
           {report && <PreflightPanel report={report} />}
         </div>
       })}
     </div>}
+  </section>
+}
+
+function RunObservabilityPanel({ detail }: { detail: RunObservability }) {
+  return <section className="panel observabilityPanel">
+    <div className="panelTitle">运行详情 Run Observability · <span className="mono">{detail.run.run_id}</span></div>
+    <div className="summaryChips">
+      <span className="chip">事件 Events {detail.summary.events}</span>
+      <span className="chip">尝试 Attempts {detail.summary.attempts}</span>
+      <span className="chip">产物 Artifacts {detail.summary.artifacts}</span>
+      <span className="chip">指标 Metrics {detail.summary.metrics}</span>
+      <span className={detail.summary.failures ? 'chip failureChip' : 'chip'}>失败 Failures {detail.summary.failures}</span>
+    </div>
+
+    <div className="detailSection">
+      <h3>生命周期 Lifecycle Events</h3>
+      {detail.events.length === 0 ? <p className="muted">此运行创建于事件记录启用前 No structured events for this Run.</p> : <div className="eventTimeline">
+        {detail.events.map(event => <div className="eventRow" key={event.event_id}>
+          <span className="eventType">{event.event_type}</span>
+          <span className="mono">{event.occurred_at}</span>
+          <span className="muted">{event.category ?? 'lifecycle'}</span>
+          <code>{JSON.stringify(event.payload)}</code>
+        </div>)}
+      </div>}
+    </div>
+
+    <div className="detailSection">
+      <h3>任务、尝试与日志 Jobs, Attempts & Logs</h3>
+      {detail.jobs.length === 0 ? <p className="muted">暂无持久任务 No durable Jobs.</p> : detail.jobs.map(({ job, attempts }) => <div className="detailJob" key={job.job_id}>
+        <div><b className="mono">{job.job_id}</b> · {job.kind} · {job.state}</div>
+        {attempts.length === 0 ? <p className="muted">尚未执行 Not executed.</p> : attempts.map(({ attempt, logs, failure }) => <div className="detailAttempt" key={attempt.attempt_id}>
+          <div className="attemptHeader"><span className="mono">{attempt.attempt_id}</span><b>{attempt.state}</b><span>exit {String(attempt.exit_code ?? '—')}</span></div>
+          {failure && <div className="failureGuide"><b>失败类别 Failure Category</b><span>{formatFailure(failure)}</span><small>可重试 Retriable: {failure.retriable ? 'yes' : 'no'}</small></div>}
+          <div className="logGrid">
+            {(['stdout', 'stderr'] as const).map(stream => <div className="logCard" key={stream}>
+              <div><b>{stream}</b> <span className="muted mono">{logs[stream].path}</span></div>
+              <pre>{formatLogTail(logs[stream]) || '—'}</pre>
+            </div>)}
+          </div>
+        </div>)}
+      </div>)}
+    </div>
+
+    <div className="detailColumns">
+      <div className="detailSection"><h3>产物 Artifacts</h3>{detail.artifacts.length === 0 ? <p className="muted">暂无产物 No artifacts.</p> : detail.artifacts.map(item => <div className="compactRecord" key={item.artifact_id}><b>{item.kind}</b><span>{item.display_name ?? item.artifact_id}</span><span className="mono">{item.artifact_id}</span></div>)}</div>
+      <div className="detailSection"><h3>指标 Metrics</h3>{detail.metrics.length === 0 ? <p className="muted">暂无指标 No metrics.</p> : detail.metrics.map(item => <div className="compactRecord" key={item.metric_id}><b>{item.name}</b><span>{String(item.value)}</span><span>{item.unit ?? item.scope ?? ''}</span></div>)}</div>
+    </div>
   </section>
 }
 

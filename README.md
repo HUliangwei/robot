@@ -100,8 +100,15 @@ Useful control-plane checks:
 rlw system doctor
 rlw catalog rebuild
 rlw system overview
+rlw run inspect RUN_ID
 rlw evaluation compare RUN_A RUN_B
 ```
+
+`rlw run inspect RUN_ID` and the GUI's **查看详情 Inspect** action use the
+same observability service. They show Run lifecycle events, durable Jobs and
+ExecutionAttempts, bounded stdout/stderr tails, failure category and guidance,
+Artifacts, and Metrics. Add `--json` when another tool needs the stable
+`rlw.run_observability/v1` response.
 
 ## Development order
 

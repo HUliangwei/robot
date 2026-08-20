@@ -24,6 +24,7 @@ from workbench.core.domain import CommandSpec
 from workbench.core.ids import new_id
 from workbench.executors.local import LocalExecutor
 from workbench.providers.lerobot import LeRobotAdapter
+from workbench.services.observability import LifecycleEventWriter
 from workbench.storage.catalog import Catalog
 from workbench.storage.manifests import atomic_write_json, atomic_write_yaml, read_json
 
@@ -364,6 +365,26 @@ class GoldenPathService:
             self.root / ".rlw" / "state" / "jobs" / job_id / "job.json",
             job_record,
         )
+        events = LifecycleEventWriter(self.root, run_id)
+        events.emit(
+            "RunCreated",
+            occurred_at=run_manifest["created_at"],
+            category="lifecycle",
+            payload={
+                "status": "READY",
+                "experiment_id": experiment_id,
+                "trial_id": trial_id,
+            },
+            dedupe_key=f"RunCreated:{run_id}",
+        )
+        events.emit(
+            "JobCreated",
+            job_id=job_id,
+            occurred_at=job_record["created_at"],
+            category="lifecycle",
+            payload={"kind": "train", "state": "READY"},
+            dedupe_key=f"JobCreated:{job_id}",
+        )
         self.catalog.rebuild(self.root)
         return {
             "schema_version": "rlw.golden_prepare/v1",
@@ -583,6 +604,9 @@ class GoldenPathService:
             job_record_path = run_dir / "jobs" / str(manifest["job"].get("kind") or "train") / "job.json"
             manifest.setdefault("paths", {})["job_record"] = job_record_path.relative_to(self.root).as_posix()
         job_record = read_json(job_record_path) if job_record_path.exists() else dict(manifest["job"])
+        previous_state = str(job_record.get("state") or "READY")
+        attempt_id = new_id("attempt")
+        events = LifecycleEventWriter(self.root, run_id)
         started_at = _utc_now()
         job_record["state"] = "RUNNING"
         job_record["started_at"] = started_at
@@ -592,8 +616,26 @@ class GoldenPathService:
         manifest["preflight"] = preflight
         atomic_write_json(job_record_path, job_record)
         atomic_write_json(manifest_path, manifest)
+        events.emit(
+            "JobStateChanged",
+            job_id=job_id,
+            attempt_id=attempt_id,
+            occurred_at=started_at,
+            category="lifecycle",
+            payload={"from": previous_state, "to": "RUNNING"},
+            dedupe_key=f"JobStateChanged:{job_id}:{attempt_id}:RUNNING",
+        )
+        events.emit(
+            "AttemptStarted",
+            job_id=job_id,
+            attempt_id=attempt_id,
+            occurred_at=started_at,
+            category="execution",
+            payload={"state": "RUNNING"},
+            dedupe_key=f"AttemptStarted:{attempt_id}",
+        )
 
-        result = LocalExecutor(self.root).run(job_id, command)
+        result = LocalExecutor(self.root).run(job_id, command, attempt_id=attempt_id)
         manifest = read_json(manifest_path)
         ended_at = _utc_now()
         stdout_rel = Path(result.stdout_path).relative_to(self.root).as_posix()
@@ -607,6 +649,17 @@ class GoldenPathService:
                 "runtime_record_path": runtime_attempt_rel,
             }
         )
+        failure = None
+        if result.state == "FAILED":
+            failure = {
+                "category": "ExecutionError",
+                "reason": f"Command exited with code {result.exit_code}.",
+                "retriable": False,
+                "recommended_action": (
+                    "Inspect stdout and stderr, correct the command or provider input, then retry."
+                ),
+            }
+            attempt_record["error"] = failure
         attempt_record_path = job_record_path.parent / "attempts" / f"{result.attempt_id}.json"
         atomic_write_json(attempt_record_path, attempt_record)
 
@@ -637,6 +690,44 @@ class GoldenPathService:
             "runtime_attempt_path": runtime_attempt_rel,
         }
         atomic_write_json(manifest_path, manifest)
+        if failure is not None:
+            events.emit(
+                "AttemptFailed",
+                job_id=job_id,
+                attempt_id=result.attempt_id,
+                occurred_at=ended_at,
+                category="execution",
+                payload={"exit_code": result.exit_code, "error": failure},
+                dedupe_key=f"AttemptFailed:{result.attempt_id}",
+            )
+        events.emit(
+            "JobStateChanged",
+            job_id=job_id,
+            attempt_id=result.attempt_id,
+            occurred_at=ended_at,
+            category="lifecycle",
+            payload={"from": "RUNNING", "to": result.state},
+            dedupe_key=f"JobStateChanged:{job_id}:{result.attempt_id}:{result.state}",
+        )
+        if result.state == "SUCCEEDED":
+            events.emit(
+                "JobCompleted",
+                job_id=job_id,
+                attempt_id=result.attempt_id,
+                occurred_at=ended_at,
+                category="lifecycle",
+                payload={"state": result.state, "exit_code": result.exit_code},
+                dedupe_key=f"JobCompleted:{job_id}:{result.attempt_id}",
+            )
+            events.emit(
+                "RunCompleted",
+                job_id=job_id,
+                attempt_id=result.attempt_id,
+                occurred_at=ended_at,
+                category="lifecycle",
+                payload={"state": result.state},
+                dedupe_key=f"RunCompleted:{run_id}:{result.attempt_id}",
+            )
         discovered = self.discover(run_id)
         self.catalog.rebuild(self.root)
         return {
@@ -657,6 +748,7 @@ class GoldenPathService:
         output_rel = Path(manifest["paths"]["training_output"])
         output_dir = self.root / output_rel
         record_root = run_dir / "records"
+        events = LifecycleEventWriter(self.root, run_id)
         artifacts = 0
         metrics = 0
 
@@ -685,6 +777,12 @@ class GoldenPathService:
                     ],
                 }
                 atomic_write_json(record_root / "artifacts" / artifact_id / "artifact.json", payload)
+                events.emit(
+                    "ArtifactDiscovered",
+                    category="artifact",
+                    payload={"artifact_id": artifact_id, "kind": "checkpoint"},
+                    dedupe_key=f"ArtifactDiscovered:{artifact_id}",
+                )
                 artifacts += 1
 
             for kind, directory_name in (
@@ -719,6 +817,12 @@ class GoldenPathService:
                     atomic_write_json(
                         record_root / "artifacts" / artifact_id / "artifact.json",
                         payload,
+                    )
+                    events.emit(
+                        "ArtifactDiscovered",
+                        category="artifact",
+                        payload={"artifact_id": artifact_id, "kind": kind},
+                        dedupe_key=f"ArtifactDiscovered:{artifact_id}",
                     )
                     artifacts += 1
 
@@ -756,6 +860,16 @@ class GoldenPathService:
                         if metadata.get(key) is not None:
                             metric_payload[key] = metadata[key]
                     atomic_write_json(record_root / "metrics" / metric_id / "metric.json", metric_payload)
+                    events.emit(
+                        "MetricEmitted",
+                        category="metric",
+                        payload={
+                            "metric_id": metric_id,
+                            "name": str(name),
+                            "value": float(value),
+                        },
+                        dedupe_key=f"MetricEmitted:{metric_id}",
+                    )
                     metrics += 1
 
         self.catalog.rebuild(self.root)

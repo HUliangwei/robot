@@ -35,4 +35,9 @@ this directory themselves.
 `rlw gui start --no-open` for headless use or `rlw gui start --help` for port
 options.
 
+On the **运行 Runs** page, choose **查看详情 Inspect** to load the shared
+Run observability view: lifecycle events, Job/Attempt state, bounded
+stdout/stderr tails, failure guidance, Artifacts, and Metrics. The equivalent
+root-scoped CLI command is `rlw run inspect RUN_ID`.
+
 The GUI must never spawn LeRobot, SSH, rsync, or local training processes directly. Add business behavior in Application Services and expose it through the API.

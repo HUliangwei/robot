@@ -131,3 +131,31 @@ def test_api_allows_the_gui_origin_selected_by_rlw_gui_start(tmp_path, monkeypat
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == origin
+
+
+def test_run_observability_api_returns_the_shared_detail_contract(tmp_path):
+    atomic_write_json(
+        tmp_path / "runs" / "run_detail" / "manifest.json",
+        {
+            "schema_version": "rlw.run_manifest/v1",
+            "run_id": "run_detail",
+            "status": "READY",
+        },
+    )
+    client = TestClient(create_app(tmp_path))
+
+    response = client.get("/api/v1/runs/run_detail/observability")
+
+    assert response.status_code == 200
+    assert response.json()["schema_version"] == "rlw.run_observability/v1"
+    assert response.json()["run"]["run_id"] == "run_detail"
+    assert response.json()["summary"]["jobs"] == 0
+
+
+def test_run_observability_api_returns_404_for_a_missing_run(tmp_path):
+    response = TestClient(create_app(tmp_path)).get(
+        "/api/v1/runs/run_missing/observability"
+    )
+
+    assert response.status_code == 404
+    assert "does not exist" in response.json()["detail"]

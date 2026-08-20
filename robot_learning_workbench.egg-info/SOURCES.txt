@@ -8,6 +8,7 @@ robot_learning_workbench.egg-info/requires.txt
 robot_learning_workbench.egg-info/top_level.txt
 tests/test_api.py
 tests/test_catalog.py
+tests/test_cli_observability.py
 tests/test_cli_root_guard.py
 tests/test_doctor_environment.py
 tests/test_evaluation.py
@@ -18,6 +19,7 @@ tests/test_gui_launcher.py
 tests/test_legacy.py
 tests/test_local_executor.py
 tests/test_manifests.py
+tests/test_observability.py
 tests/test_round_transcript_r8_1.py
 tests/test_runtime_contract_r8.py
 tests/test_test_runner_r8.py
@@ -43,6 +45,7 @@ workbench/services/evaluation.py
 workbench/services/golden_path.py
 workbench/services/gui_launcher.py
 workbench/services/legacy.py
+workbench/services/observability.py
 workbench/services/overview.py
 workbench/services/provider_doctor.py
 workbench/services/test_runner.py

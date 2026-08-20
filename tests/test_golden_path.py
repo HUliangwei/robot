@@ -9,6 +9,7 @@ import yaml
 import pytest
 
 from workbench.services.golden_path import GoldenPathService
+from workbench.services.observability import read_lifecycle_events
 from workbench.storage.catalog import Catalog
 
 
@@ -87,6 +88,10 @@ native_overrides:
     summary = catalog.rebuild(tmp_path)
     assert summary["run"] == 1
     assert summary["dataset"] == 1
+    assert [
+        event["event_type"]
+        for event in read_lifecycle_events(run_manifest.parent / "events.jsonl")
+    ] == ["RunCreated", "JobCreated"]
 
 
 def test_prepare_writes_portable_run_research_record(tmp_path: Path):
@@ -225,6 +230,81 @@ def test_execute_archives_durable_job_and_attempt_records(tmp_path: Path):
     assert attempt["exit_code"] == 0
     assert attempt["stdout_path"].startswith(".rlw/state/jobs/")
     assert attempt["stderr_path"].startswith(".rlw/state/jobs/")
+    assert [
+        event["event_type"]
+        for event in read_lifecycle_events(run_dir / "events.jsonl")
+    ] == [
+        "RunCreated",
+        "JobCreated",
+        "JobStateChanged",
+        "AttemptStarted",
+        "JobStateChanged",
+        "JobCompleted",
+        "RunCompleted",
+    ]
+
+
+def test_execute_records_a_normalized_execution_failure_event(tmp_path: Path):
+    _init_repo(tmp_path)
+    recipe = tmp_path / "recipe.yaml"
+    recipe.write_text(
+        "schema_version: rlw.recipe/v1\n"
+        "name: failed_attempt\n"
+        "kind: train\n"
+        "provider: lerobot\n"
+        "policy_type: act\n"
+        "dataset_repo_id: lerobot/pusht\n",
+        encoding="utf-8",
+    )
+    fake_lerobot = tmp_path / "lerobot" / "__init__.py"
+    fake_lerobot.parent.mkdir()
+    fake_lerobot.write_text("__version__ = 'test'\n", encoding="utf-8")
+    (tmp_path / "torch.py").write_text(
+        "__version__ = 'test'\n"
+        "class cuda:\n"
+        "    @staticmethod\n"
+        "    def is_available():\n"
+        "        return False\n",
+        encoding="utf-8",
+    )
+    _commit_all(tmp_path)
+    service = GoldenPathService(tmp_path)
+    prepared = service.prepare(
+        recipe,
+        dataset_revision="f" * 40,
+        python_executable=sys.executable,
+    )
+    command_path = Path(prepared["command_manifest"])
+    command = json.loads(command_path.read_text(encoding="utf-8"))
+    command["argv"] = [sys.executable, "-c", "raise SystemExit(7)"]
+    command_path.write_text(json.dumps(command), encoding="utf-8")
+
+    executed = service.execute(prepared["run_id"])
+    attempt_path = (
+        Path(prepared["run_dir"])
+        / "jobs"
+        / "train"
+        / "attempts"
+        / f"{executed['attempt_id']}.json"
+    )
+    attempt = json.loads(attempt_path.read_text(encoding="utf-8"))
+    failed = [
+        event
+        for event in read_lifecycle_events(Path(prepared["run_dir"]) / "events.jsonl")
+        if event["event_type"] == "AttemptFailed"
+    ]
+
+    assert executed["state"] == "FAILED"
+    assert attempt["error"] == {
+        "category": "ExecutionError",
+        "reason": "Command exited with code 7.",
+        "retriable": False,
+        "recommended_action": (
+            "Inspect stdout and stderr, correct the command or provider input, then retry."
+        ),
+    }
+    assert len(failed) == 1
+    assert failed[0]["payload"]["error"] == attempt["error"]
 
 
 def test_prepare_rejects_mutable_or_missing_dataset_revision(tmp_path: Path):
@@ -323,3 +403,15 @@ def test_discover_registers_checkpoint_rollout_evaluation_and_metrics(tmp_path: 
     assert again["artifacts"] >= 1
     catalog.rebuild(tmp_path)
     assert catalog.count("metric") == 2
+    discovery_events = [
+        event["event_type"]
+        for event in read_lifecycle_events(run_dir / "events.jsonl")
+        if event["event_type"] in {"ArtifactDiscovered", "MetricEmitted"}
+    ]
+    assert discovery_events == [
+        "ArtifactDiscovered",
+        "ArtifactDiscovered",
+        "ArtifactDiscovered",
+        "MetricEmitted",
+        "MetricEmitted",
+    ]

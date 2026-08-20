@@ -10,9 +10,22 @@ from workbench.storage.manifests import atomic_write_json
 class LocalExecutor:
     def __init__(self, project_root: str | Path):
         self.project_root = Path(project_root).resolve()
-    def run(self, job_id: str, command: CommandSpec) -> ExecutionResult:
-        attempt_id = new_id("attempt")
-        state_dir = self.project_root/".rlw"/"state"/"jobs"/job_id/attempt_id
+    def run(
+        self,
+        job_id: str,
+        command: CommandSpec,
+        *,
+        attempt_id: str | None = None,
+    ) -> ExecutionResult:
+        attempt_id = attempt_id or new_id("attempt")
+        if attempt_id in {"", ".", ".."} or Path(attempt_id).name != attempt_id:
+            raise ValueError(f"invalid Attempt ID: {attempt_id!r}")
+        if job_id in {"", ".", ".."} or Path(job_id).name != job_id:
+            raise ValueError(f"invalid Job ID: {job_id!r}")
+        jobs_root = (self.project_root / ".rlw" / "state" / "jobs").resolve()
+        state_dir = (jobs_root / job_id / attempt_id).resolve()
+        if not state_dir.is_relative_to(jobs_root):
+            raise ValueError(f"invalid Attempt ID: {attempt_id!r}")
         state_dir.mkdir(parents=True, exist_ok=True)
         stdout_path, stderr_path, attempt_path = state_dir/"stdout.log", state_dir/"stderr.log", state_dir/"attempt.json"
         started = datetime.now(timezone.utc).isoformat()

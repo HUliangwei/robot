@@ -13,6 +13,7 @@ from workbench.services.evaluation import compare_catalog_metrics
 from workbench.services.golden_path import GoldenPathService
 from workbench.services.legacy import scan_legacy_workspace
 from workbench.services.overview import build_overview
+from workbench.services.observability import RunObservabilityService
 from workbench.services.provider_doctor import run_provider_doctor
 from workbench.storage.catalog import Catalog
 from workbench.storage.paths import ensure_runtime_dirs, find_project_root
@@ -55,6 +56,20 @@ def create_app(root: str | Path | None = None) -> FastAPI:
     @app.get("/api/v1/runs")
     def runs():
         return {"items": catalog.list_records("run")}
+
+    @app.get("/api/v1/runs/{run_id}/observability")
+    def run_observability(
+        run_id: str,
+        log_tail_lines: int = Query(default=80, ge=1, le=1000),
+    ):
+        try:
+            return RunObservabilityService(project_root).inspect(
+                run_id, log_tail_lines=log_tail_lines
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/v1/datasets")
     def datasets():

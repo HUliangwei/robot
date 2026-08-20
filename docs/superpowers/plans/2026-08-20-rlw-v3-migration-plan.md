@@ -96,7 +96,14 @@
 
 ### Task 10: Next local observability slice
 
-- [ ] Add structured local lifecycle events without introducing full Event Sourcing.
-- [ ] Expose Run/Job/Attempt log summaries through the shared service/API boundary.
-- [ ] Add GUI detail views for logs, artifacts, metrics, and failure categories.
-- [ ] Keep Remote Compute and SSH out of scope until this local boundary is stable.
+- [x] Add structured local lifecycle events without introducing full Event Sourcing.
+- [x] Expose Run/Job/Attempt log summaries through the shared service/API boundary.
+- [x] Add GUI detail views for logs, artifacts, metrics, and failure categories.
+- [x] Keep Remote Compute and SSH out of scope until this local boundary is stable.
+
+### Task 11: Complete the remaining local GUI acceptance details
+
+- [ ] Add portable resolved-config, manifest, lineage, and Artifact Replica detail sections.
+- [ ] Route local Job execute/reconcile actions through Application Services and guarded API/GUI actions.
+- [ ] Add bounded polling for running local Attempts while retaining the stable observability schema.
+- [ ] Validate CLI/API/GUI equality against the same canonical Run fixture before any Remote work.
