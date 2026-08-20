@@ -32,15 +32,15 @@ def run_pytest(
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
 
-    print("RLW · Dev Test")
-    print("────────────────────────────────────────────────────────")
+    print("RLW - Dev Test")
+    print("------------------------------------------------------------")
     print("# Run pytest, stream the live output, and preserve the complete transcript.")
     print()
     print("COMMAND")
     print("  > " + " ".join(argv))
     print()
-    print("OUTPUT · STREAM")
-    print("────────────────────────────────────────────────────────")
+    print("OUTPUT - STREAM")
+    print("------------------------------------------------------------")
 
     with log_path.open("w", encoding="utf-8", newline="") as log:
         log.write("COMMAND\n> " + " ".join(argv) + "\n\nOUTPUT\n")

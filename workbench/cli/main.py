@@ -41,8 +41,8 @@ def _emit(
     if json_mode:
         _json(data)
         return
-    print(f"RLW · {title}")
-    print("────────────────────────────────────────────────────────")
+    print(f"RLW - {title}")
+    print("------------------------------------------------------------")
     print(f"# {comment}")
     print()
     print("COMMAND")
@@ -76,8 +76,8 @@ def _emit_doctor(data: dict[str, Any], *, json_mode: bool) -> None:
     if json_mode:
         _json(data)
         return
-    print("RLW · System Doctor")
-    print("────────────────────────────────────────────────────────")
+    print("RLW - System Doctor")
+    print("------------------------------------------------------------")
     print("# Inspect the RLW control plane. Provider packages are checked separately.")
     print()
     print("COMMAND")
@@ -85,10 +85,10 @@ def _emit_doctor(data: dict[str, Any], *, json_mode: bool) -> None:
     print()
     print("CONTROL PLANE")
     for name, item in data["checks"].items():
-        mark = "✓" if item["ok"] else ("✗" if item["required"] else "○")
+        mark = "[OK]" if item["ok"] else ("[FAIL]" if item["required"] else "[INFO]")
         value = item.get("value")
         suffix = f"  {value}" if value not in (None, "") else ""
-        print(f"  {mark} {name:<16}{suffix}")
+        print(f"  {mark:<6} {name:<16}{suffix}")
     print()
     print("RESULT")
     print(f"  required_health     {'READY' if data['healthy_required'] else 'FAILED'}")
@@ -101,8 +101,8 @@ def _emit_provider_doctor(data: dict[str, Any], *, json_mode: bool) -> None:
     if json_mode:
         _json(data)
         return
-    print("RLW · Provider Doctor")
-    print("────────────────────────────────────────────────────────")
+    print("RLW - Provider Doctor")
+    print("------------------------------------------------------------")
     print("# Probe an isolated provider environment without installing provider packages into RLW.")
     print()
     print("COMMAND")
@@ -112,10 +112,10 @@ def _emit_provider_doctor(data: dict[str, Any], *, json_mode: bool) -> None:
     print(f"ENV       {data['environment']}")
     print()
     for name, item in data["checks"].items():
-        mark = "✓" if item["ok"] else ("✗" if item["required"] else "○")
+        mark = "[OK]" if item["ok"] else ("[FAIL]" if item["required"] else "[INFO]")
         value = item.get("value")
         suffix = f"  {value}" if value not in (None, "") else ""
-        print(f"  {mark} {name:<16}{suffix}")
+        print(f"  {mark:<6} {name:<16}{suffix}")
     print()
     print("RESULT")
     print(f"  provider_status     {'READY' if data['ready'] else 'NOT READY'}")

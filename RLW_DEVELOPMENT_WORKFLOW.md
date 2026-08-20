@@ -6,99 +6,100 @@ This file defines the fixed development/update loop for Robot Learning Workbench
 
 ```text
 GitHub commit
-      ↓
-ChatGPT reviews the exact current branch/commit
-      ↓
-ChatGPT generates an incremental ZIP update
-      ↓
-Local dry-run
-      ↓
-Automatic backup
-      ↓
-Apply update
-      ↓
-Verification / pytest
-      ↓
-Commit to the feature branch
-      ↓
-Push to GitHub
-      ↓
-ChatGPT reviews the new commit and prepares the next ZIP
+  -> review exact current branch/commit
+  -> generate incremental ZIP
+  -> dry-run
+  -> automatic backup
+  -> apply
+  -> verify
+  -> pytest
+  -> commit/push feature branch
+  -> review next round
 ```
 
-A test failure does **not** require discarding the branch. Commit/push the diagnostic
-or fix state when useful, provide the terminal evidence, and continue review from the
-new GitHub commit.
+A failed test does not require discarding the feature branch. The failed state may be
+committed and pushed for review when the round log clearly records the failure.
 
 ## ZIP contract
 
 Every update ZIP must contain:
 
-- `apply_update.py` — dry-run, base-commit validation, backup, controlled overlay.
-- `verify_update.py` — structural verification and targeted checks.
-- `rollback_update.py` — restore overwritten files and remove files created by the update.
-- `payload/` — only the source/docs/tests changed in that round.
+- `apply_update.py`: base validation, dry-run, backup, controlled overlay.
+- `verify_update.py`: structural and targeted checks.
+- `rollback_update.py`: restore overwritten files and remove files created by the update.
+- `payload/`: source/docs/tests changed in the round.
+- `run_update_round.ps1`: current-round transcript runner.
 
 Updates must not silently delete `workspace/`, canonical research records, datasets,
-checkpoints, legacy GUI assets, or machine-local state.
+checkpoints, legacy assets, or machine-local state.
 
-## Normal local sequence
+## Round transcript policy
 
-```powershell
-git status -sb
-git rev-parse HEAD
+Terminal scrollback is not evidence. Every update round writes one complete PowerShell
+transcript to:
+
+```text
+.rlw/logs/update_rounds/
 ```
 
-Then use the one-command extraction + dry-run command supplied with the ZIP, followed
-by the apply command.
+The transcript starts before the project-changing dry-run/apply sequence and records:
 
-After applying:
-
-```powershell
-rlw dev test
-git status -sb
-git diff --stat
-git add -A
-git commit -m "<round commit message>"
-git push
+```text
+round / timestamp
+PowerShell + Python + Conda context
+git branch + HEAD + status
+ZIP path + SHA256
+dry-run
+backup + apply
+verification
+pytest
+git status + diff
+commit + push (when requested)
+final HEAD + status
 ```
+
+`.rlw/` is machine-local runtime state and remains outside Git.
+
+## Encoding policy
+
+The round runner configures UTF-8 for native commands and Python:
+
+```text
+code page 65001
+PYTHONUTF8=1
+PYTHONIOENCODING=utf-8
+```
+
+RLW human-facing terminal decorations use ASCII-safe text (`[OK]`, `[FAIL]`, `-`)
+instead of box-drawing/check-mark glyphs. JSON remains UTF-8.
 
 ## Test-output policy
 
-Raw terminal scrollback is not a durable verification record. Use:
+Use:
 
 ```powershell
 rlw dev test
 ```
 
-RLW streams pytest output to the terminal **and** writes the full transcript under:
+It streams pytest and separately preserves the full pytest transcript under:
 
 ```text
 .rlw/logs/tests/
 ```
 
-If the terminal scrollback truncates older lines, the full test transcript remains
-available in the logged file.
+The round transcript therefore records the entire update lifecycle, while the pytest
+log remains a focused test artifact.
 
-Use:
+## What to send back after each round
 
-```powershell
-rlw dev test --quiet
-rlw dev test --show-output
-```
+The normal handoff to ChatGPT is only:
 
-when needed.
+1. the newest round log from `.rlw/logs/update_rounds/`;
+2. your suggestions / observations for the next round.
+
+The log should already contain the commit SHA, test result, diff summary, and push result.
 
 ## Branch policy
 
-Development remains on a feature branch until the milestone is validated.
-
-Current line:
-
-```text
-main
-└── feat/workbench-v0
-    └── feat/golden-path-v0.1
-```
-
-Do not merge to `main` merely because one incremental round passes.
+Development stays on the feature branch until milestone validation. Do not merge to
+`main` only because one incremental round passes.
