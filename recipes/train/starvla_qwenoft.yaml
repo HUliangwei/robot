@@ -1,0 +1,9 @@
+schema_version: rlw.recipe/v1
+name: starvla_qwenoft_template
+kind: train
+provider: starvla
+framework: qwen_oft
+native_config: examples/simBenchmarks/LIBERO/train_files/starvla_qwenoft_libero.yaml
+accelerate_config: starVLA/config/deepseeds/deepspeed_zero2.yaml
+num_processes: 1
+native_overrides: {}

@@ -208,3 +208,45 @@ def test_reconcile_api_uses_the_local_action_service(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["schema_version"] == "rlw.golden_discover/v1"
+
+
+def test_provider_api_projects_registry_and_shared_command_preview(tmp_path):
+    recipe = tmp_path / "recipes" / "train" / "starvla.yaml"
+    recipe.parent.mkdir(parents=True)
+    recipe.write_text(
+        "schema_version: rlw.recipe/v1\nprovider: starvla\nkind: train\n"
+        "framework: qwen_oft\nnative_config: configs/train.yaml\n",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(tmp_path))
+
+    providers = client.get("/api/v1/providers")
+    preview = client.post(
+        "/api/v1/providers/starvla/command",
+        json={"recipe": "recipes/train/starvla.yaml", "provider_env": "starvla"},
+    )
+
+    assert providers.status_code == 200
+    assert [item["name"] for item in providers.json()["items"]] == ["lerobot", "starvla"]
+    assert preview.status_code == 200
+    assert preview.json()["provider"] == "starvla"
+    assert preview.json()["executed"] is False
+
+
+def test_provider_doctor_api_passes_provider_runtime_selection(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "workbench.api.app.run_provider_doctor",
+        lambda target, **kwargs: {"target": target, **kwargs},
+    )
+
+    response = TestClient(create_app(tmp_path)).get(
+        "/api/v1/providers/starvla/doctor",
+        params={"environment": "vla-dev", "provider_root": "D:/starVLA"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "target": "starvla",
+        "environment": "vla-dev",
+        "provider_root": "D:/starVLA",
+    }

@@ -7,7 +7,17 @@ from workbench.services.doctor import run_doctor
 def test_cli_exposes_provider_dev_and_run_contract():
     parser = build_parser()
     assert parser.parse_args(["provider", "list"]).provider_command == "list"
-    assert parser.parse_args(["provider", "doctor", "lerobot-win"]).environment == "lerobot-win"
+    legacy_doctor = parser.parse_args(["provider", "doctor", "lerobot-win"])
+    assert legacy_doctor.target == "lerobot-win"
+    canonical_doctor = parser.parse_args(
+        ["provider", "doctor", "starvla", "--environment", "vla-dev", "--provider-root", "D:/starVLA"]
+    )
+    assert canonical_doctor.target == "starvla"
+    assert canonical_doctor.environment == "vla-dev"
+    command = parser.parse_args(
+        ["provider", "command", "starvla", "--recipe", "recipes/train/starvla_qwenoft.yaml"]
+    )
+    assert command.provider == "starvla"
     assert parser.parse_args(["dev", "test"]).dev_command == "test"
     prepared = parser.parse_args(
         ["run", "prepare", "pusht-act", "--dataset-revision", "a" * 40]

@@ -35,7 +35,7 @@ def test_system_doctor_reports_core_environment_and_gui_state(
     assert "npm_executable" in report["checks"]
     assert report["next_steps"] == [
         "rlw gui start",
-        "rlw provider doctor lerobot-win",
+        "rlw provider doctor lerobot",
     ]
 
 
@@ -55,7 +55,7 @@ def test_system_doctor_cli_prints_the_state_driven_next_steps(
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "rlw gui start" in output
-    assert "rlw provider doctor lerobot-win" in output
+    assert "rlw provider doctor lerobot" in output
 
 
 def test_system_doctor_distinguishes_python_env_from_the_parent_shell(

@@ -107,3 +107,11 @@
 - [x] Route local Job execute/reconcile actions through Application Services and guarded API/GUI actions.
 - [x] Add bounded polling for running local Attempts while retaining the stable observability schema.
 - [x] Validate CLI/API/GUI equality against the same canonical Run fixture before any Remote work.
+
+### Task 12: Prove the second Provider boundary with StarVLA
+
+- [x] Replace direct Provider construction with a stable Provider registry.
+- [x] Add a thin StarVLA adapter for validation, capability projection, and command preview.
+- [x] Expose provider-aware local doctor and preview through root-scoped CLI/API commands.
+- [x] Add a GUI Providers page without Provider SDK or execution logic.
+- [x] Keep StarVLA Run execution and Provider installation for the next local slice.

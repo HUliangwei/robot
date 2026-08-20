@@ -17,7 +17,11 @@ from workbench.services.gui_launcher import (
 from workbench.services.legacy import scan_legacy_workspace
 from workbench.services.overview import build_overview
 from workbench.services.observability import RunObservabilityService
-from workbench.services.provider_doctor import list_providers, run_provider_doctor
+from workbench.services.provider_doctor import (
+    list_providers,
+    preview_provider_command,
+    run_provider_doctor,
+)
 from workbench.services.test_runner import run_pytest
 from workbench.storage.catalog import Catalog
 from workbench.storage.manifests import read_json
@@ -101,7 +105,7 @@ def _emit_doctor(data: dict[str, Any], *, json_mode: bool) -> None:
     print(f"  required_health     {'READY' if data['healthy_required'] else 'FAILED'}")
     print()
     print("NEXT")
-    for step in data.get("next_steps") or ["rlw provider doctor lerobot-win"]:
+    for step in data.get("next_steps") or ["rlw provider doctor lerobot"]:
         print(f"  > {step}")
 
 
@@ -160,7 +164,9 @@ Command model:
 
 Core workflow:
   rlw system doctor
-  rlw provider doctor lerobot-win
+  rlw provider doctor lerobot
+  rlw provider doctor starvla --environment starvla --provider-root <PATH>
+  rlw provider command starvla --recipe recipes/train/starvla_qwenoft.yaml
   rlw run prepare pusht-act
   rlw run preflight <RUN_ID>
   rlw run execute <RUN_ID>
@@ -188,8 +194,25 @@ Core workflow:
     provider_list = provider_sub.add_parser("list", help="list registered provider adapters")
     _add_output_flags(provider_list)
     provider_doctor = provider_sub.add_parser("doctor", help="probe a provider environment")
-    provider_doctor.add_argument("environment", nargs="?", default="lerobot-win")
+    provider_doctor.add_argument(
+        "target",
+        nargs="?",
+        default="lerobot",
+        help="provider name, or legacy LeRobot environment name",
+    )
+    provider_doctor.add_argument("--environment", help="isolated Provider environment")
+    provider_doctor.add_argument("--provider-root", help="optional local Provider checkout")
     _add_output_flags(provider_doctor)
+    provider_command = provider_sub.add_parser(
+        "command",
+        help="preview a Provider command without executing it",
+    )
+    provider_command.add_argument("provider")
+    provider_command.add_argument("--recipe", required=True)
+    provider_command.add_argument("--environment", dest="provider_env")
+    provider_command.add_argument("--python-executable")
+    provider_command.add_argument("--provider-root")
+    _add_output_flags(provider_command)
 
     catalog = sub.add_parser("catalog", help="rebuildable research catalog")
     catalog_sub = catalog.add_subparsers(dest="catalog_command", required=True)
@@ -386,9 +409,48 @@ def main(argv: list[str] | None = None) -> int:
             result = list_providers()
             _emit("Provider List", "List registered provider adapters.", result, json_mode=json_mode)
             return 0
-        result = run_provider_doctor(args.environment)
-        _emit_provider_doctor(result, json_mode=json_mode)
-        return 0 if result["ready"] else 1
+        if args.provider_command == "doctor":
+            try:
+                result = run_provider_doctor(
+                    args.target,
+                    environment=args.environment,
+                    provider_root=args.provider_root,
+                )
+            except ValueError as exc:
+                _emit(
+                    "Provider Doctor",
+                    "Provider selection is invalid.",
+                    {"status": "error", "error": str(exc)},
+                    json_mode=json_mode,
+                )
+                return 2
+            _emit_provider_doctor(result, json_mode=json_mode)
+            return 0 if result["ready"] else 1
+        try:
+            result = preview_provider_command(
+                root,
+                args.provider,
+                args.recipe,
+                provider_env=args.provider_env,
+                python_executable=args.python_executable,
+                provider_root=args.provider_root,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            _emit(
+                "Provider Command Preview",
+                "The Provider command could not be resolved.",
+                {"status": "error", "error": str(exc)},
+                json_mode=json_mode,
+            )
+            return 2
+        _emit(
+            "Provider Command Preview",
+            "Resolve a Provider command without executing it.",
+            result,
+            json_mode=json_mode,
+            next_steps=[f"rlw provider doctor {args.provider}"],
+        )
+        return 0
 
     if args.command == "catalog":
         result = (

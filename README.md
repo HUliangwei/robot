@@ -107,6 +107,36 @@ rlw run inspect RUN_ID
 rlw evaluation compare RUN_A RUN_B
 ```
 
+## Inspect local Providers
+
+RLW currently registers LeRobot and StarVLA behind the same thin Provider
+boundary. List their stable capabilities from the repository root:
+
+```powershell
+rlw provider list
+rlw provider doctor lerobot
+rlw provider doctor starvla --environment starvla
+```
+
+If StarVLA is checked out elsewhere on this machine, include its root so RLW
+also validates the expected upstream entrypoint and Accelerate configuration:
+
+```powershell
+rlw provider doctor starvla --environment starvla --provider-root D:\path\to\starVLA
+```
+
+Preview the command that the adapter would construct without starting training:
+
+```powershell
+rlw provider command starvla --recipe recipes/train/starvla_qwenoft.yaml --environment starvla --provider-root D:\path\to\starVLA
+```
+
+The preview is deliberately non-executing (`executed: false`). R16 validates the
+second Provider boundary; StarVLA canonical Run execution and Provider
+installation are the next local slice. The GUI's **提供器 Providers** page reads
+the same registry and doctor APIs. Do not run upstream `accelerate`, Conda, or
+GUI package-manager commands manually for ordinary RLW operations.
+
 The local Run flow is **Preflight → Execute → Inspect → Reconcile**. `execute`
 repeats the required preflight checks before starting the Provider process;
 `reconcile` safely re-discovers generated Artifact and Metric records and may
@@ -127,7 +157,8 @@ when another tool needs the stable
 
 The single architecture baseline is [`docs/architecture/Robot Learning Workbench Architecture V3.md`](docs/architecture/Robot%20Learning%20Workbench%20Architecture%20V3.md). The implementation follows the V3 order: core domain/schema → artifact/dataset/catalog → provider/command contracts → local execution/doctor → LeRobot golden path → job/eval/lineage → FastAPI → local React GUI → observability → StarVLA → remote nodes/SSH.
 
-Remote compute intentionally comes **after** the local GUI boundary is stable.
+Remote compute intentionally comes **after** the local GUI and second-Provider
+boundaries are stable.
 
 ## Safety invariants
 

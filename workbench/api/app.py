@@ -7,14 +7,17 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from workbench.providers.lerobot import LeRobotAdapter
 from workbench.services.doctor import run_doctor
 from workbench.services.evaluation import compare_catalog_metrics
 from workbench.services.golden_path import GoldenPathService
 from workbench.services.legacy import scan_legacy_workspace
 from workbench.services.overview import build_overview
 from workbench.services.observability import RunObservabilityService
-from workbench.services.provider_doctor import run_provider_doctor
+from workbench.services.provider_doctor import (
+    list_providers,
+    preview_provider_command,
+    run_provider_doctor,
+)
 from workbench.services.run_actions import LocalRunActionService, RunStateError
 from workbench.storage.catalog import Catalog
 from workbench.storage.paths import ensure_runtime_dirs, find_project_root
@@ -30,11 +33,18 @@ class RunExecuteRequest(BaseModel):
     confirmation: str
 
 
+class ProviderCommandRequest(BaseModel):
+    recipe: str
+    provider_env: str | None = None
+    python_executable: str | None = None
+    provider_root: str | None = None
+
+
 def create_app(root: str | Path | None = None) -> FastAPI:
     project_root = Path(root).resolve() if root is not None else find_project_root()
     ensure_runtime_dirs(project_root)
     catalog = Catalog(project_root / ".rlw" / "catalog.sqlite3")
-    app = FastAPI(title="Robot Learning Workbench API", version="0.4.0")
+    app = FastAPI(title="Robot Learning Workbench API", version="0.5.0")
     gui_origins = [
         "http://127.0.0.1:5173",
         "http://localhost:5173",
@@ -105,12 +115,38 @@ def create_app(root: str | Path | None = None) -> FastAPI:
 
     @app.get("/api/v1/providers")
     def providers():
-        adapter = LeRobotAdapter()
-        return {"items": [{"spec": adapter.spec().__dict__, "capabilities": adapter.capabilities()}]}
+        return list_providers()
 
-    @app.get("/api/v1/providers/{environment}/doctor")
-    def provider_doctor(environment: str):
-        return run_provider_doctor(environment)
+    @app.get("/api/v1/providers/{target}/doctor")
+    def provider_doctor(
+        target: str,
+        environment: str | None = None,
+        provider_root: str | None = None,
+    ):
+        try:
+            return run_provider_doctor(
+                target,
+                environment=environment,
+                provider_root=provider_root,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/v1/providers/{provider}/command")
+    def provider_command(provider: str, req: ProviderCommandRequest):
+        try:
+            return preview_provider_command(
+                project_root,
+                provider,
+                req.recipe,
+                provider_env=req.provider_env,
+                python_executable=req.python_executable,
+                provider_root=req.provider_root,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/v1/doctor")
     def doctor():

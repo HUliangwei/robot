@@ -95,9 +95,9 @@ def run_doctor(root: str | Path) -> dict[str, Any]:
         "cwd": os.getcwd(),
         "checks": checks,
         "healthy_required": all(item["ok"] for item in required),
-        "note": "torch/lerobot are provider checks; use `rlw provider doctor <environment>`.",
+        "note": "Provider packages are isolated; use `rlw provider doctor <provider>`.",
         "next_steps": [
             "rlw gui start" if gui_dependencies else "rlw gui install",
-            "rlw provider doctor lerobot-win",
+            "rlw provider doctor lerobot",
         ],
     }

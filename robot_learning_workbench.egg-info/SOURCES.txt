@@ -20,6 +20,7 @@ tests/test_legacy.py
 tests/test_local_executor.py
 tests/test_manifests.py
 tests/test_observability.py
+tests/test_provider_registry_r16.py
 tests/test_round_transcript_r8_1.py
 tests/test_run_actions.py
 tests/test_runtime_contract_r8.py
@@ -41,6 +42,8 @@ workbench/executors/local.py
 workbench/providers/__init__.py
 workbench/providers/base.py
 workbench/providers/lerobot.py
+workbench/providers/registry.py
+workbench/providers/starvla.py
 workbench/services/__init__.py
 workbench/services/doctor.py
 workbench/services/evaluation.py

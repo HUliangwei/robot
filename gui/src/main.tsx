@@ -15,6 +15,12 @@ import {
   shouldPollRunObservability,
   type RunObservability,
 } from './runObservability'
+import {
+  buildProviderDoctorPath,
+  providerArchitectureRows,
+  type ProviderDescriptor,
+  type ProviderDoctor,
+} from './providers'
 import './styles.css'
 
 type Overview = {
@@ -82,6 +88,9 @@ function App() {
   const [artifacts, setArtifacts] = useState<any[]>([])
   const [jobs, setJobs] = useState<JobRecord[]>([])
   const [attempts, setAttempts] = useState<AttemptRecord[]>([])
+  const [providers, setProviders] = useState<ProviderDescriptor[]>([])
+  const [providerDoctors, setProviderDoctors] = useState<Record<string, ProviderDoctor>>({})
+  const [busyProvider, setBusyProvider] = useState('')
   const [error, setError] = useState('')
   const [tab, setTab] = useState('overview')
   const [revision, setRevision] = useState('')
@@ -103,7 +112,8 @@ function App() {
     getJson<ListResponse>('/artifacts'),
     getJson<ListResponse>('/jobs'),
     getJson<ListResponse>('/attempts'),
-  ]).then(([o, d, r, ds, a, j, at]) => {
+    getJson<ListResponse>('/providers'),
+  ]).then(([o, d, r, ds, a, j, at, p]) => {
     setOverview(o)
     setDoctor(d)
     setRuns(r.items)
@@ -111,6 +121,7 @@ function App() {
     setArtifacts(a.items)
     setJobs(j.items)
     setAttempts(at.items)
+    setProviders(p.items)
     setError('')
   }).catch(e => setError(String(e)))
 
@@ -126,6 +137,21 @@ function App() {
       setTab('runs')
     } catch (e) {
       setMessage(`准备失败 Prepare failed: ${String(e)}`)
+    }
+  }
+
+  const inspectProvider = async (provider: ProviderDescriptor) => {
+    setBusyProvider(provider.name)
+    try {
+      const report = await getJson<ProviderDoctor>(
+        buildProviderDoctorPath(provider.name, provider.default_environment),
+      )
+      setProviderDoctors(current => ({ ...current, [provider.name]: report }))
+      setError('')
+    } catch (e) {
+      setError(`Provider 检查失败 Provider doctor failed: ${String(e)}`)
+    } finally {
+      setBusyProvider('')
     }
   }
 
@@ -216,6 +242,7 @@ function App() {
     ['evaluation', '评测比较 Evaluation Compare'],
     ['datasets', '数据集 Datasets'],
     ['artifacts', '产物 Artifacts'],
+    ['providers', '提供器 Providers'],
     ['legacy', '遗留资产 Legacy Assets'],
     ['doctor', '节点检查 Node Doctor'],
   ]
@@ -281,10 +308,45 @@ function App() {
       />}
       {tab === 'datasets' && <Records title="数据集版本 Dataset Revisions" empty="暂无数据集版本 No dataset revisions yet." items={datasets} keys={['dataset_id', 'revision', 'immutable']} />}
       {tab === 'artifacts' && <Records title="产物 Artifacts" empty="暂无产物 No artifacts yet." items={artifacts} keys={['artifact_id', 'kind', 'display_name', 'producer_run']} />}
+      {tab === 'providers' && <ProviderRecords
+        items={providers}
+        doctors={providerDoctors}
+        busyProvider={busyProvider}
+        onDoctor={inspectProvider}
+      />}
       {tab === 'legacy' && <section className="panel"><div className="panelTitle">检测到的遗留项目 Detected Legacy Projects</div><div className="chips">{overview?.legacy.project_names.map(x => <span className="chip" key={x}>{x}</span>)}</div></section>}
       {tab === 'doctor' && <section className="panel"><div className="panelTitle">节点能力 Node Capabilities</div><div className="checks">{doctor && Object.entries(doctor.checks).map(([n, x]) => <div className="check" key={n}><span className={x.ok ? 'ok' : 'bad'}>{x.ok ? '●' : '○'}</span><b>{doctorLabels[n] ?? n}</b><span className="muted">{x.value ?? ''}</span></div>)}</div></section>}
     </main>
   </div>
+}
+
+function ProviderRecords({ items, doctors, busyProvider, onDoctor }: {
+  items: ProviderDescriptor[]
+  doctors: Record<string, ProviderDoctor>
+  busyProvider: string
+  onDoctor: (provider: ProviderDescriptor) => void
+}) {
+  return <section className="panel">
+    <div className="panelTitle">Provider 能力与本地状态 Provider Capabilities</div>
+    <p className="muted">架构能力属于各 Provider；RLW 只投影、验证并构造命令，不在 GUI 内执行 Provider 逻辑。</p>
+    <div className="providerGrid">{items.map(provider => {
+      const report = doctors[provider.name]
+      const architectures = providerArchitectureRows(provider)
+      return <article className="providerCard" key={provider.name}>
+        <div className="providerHeading">
+          <div><h2>{provider.name}</h2><small>Adapter {provider.spec.adapter_version} · Env {provider.default_environment}</small></div>
+          <span className={`statusBadge ${report?.ready ? 'readyBadge' : ''}`}>{report ? (report.ready ? 'READY' : 'NOT READY') : 'NOT CHECKED'}</span>
+        </div>
+        <div className="chips">{(provider.capabilities.jobs ?? []).map(job => <span className="chip" key={job}>Job · {job}</span>)}{(provider.capabilities.execution_modes ?? []).map(mode => <span className="chip" key={mode}>{mode}</span>)}</div>
+        {architectures.length > 0 && <div className="architectureRows">{architectures.map(row => <div className="architectureRow" key={row.framework}>
+          <b>{row.framework}</b><span>Backbone: {row.backbone}</span><span>Action Head: {row.actionHead}</span><span>Fusion: {row.fusion}</span>
+        </div>)}</div>}
+        {report && <div className="providerChecks">{Object.entries(report.checks).map(([name, check]) => <span key={name} className={check.ok ? 'ok' : (check.required ? 'bad' : 'muted')}>{check.ok ? '●' : '○'} {name}</span>)}</div>}
+        <button className="secondary" onClick={() => onDoctor(provider)} disabled={busyProvider === provider.name}>{busyProvider === provider.name ? '检查中 Checking…' : '检查本地环境 Run Doctor'}</button>
+        <p className="muted providerCommand">项目根目录命令：<code>rlw provider doctor {provider.name}</code></p>
+      </article>
+    })}</div>
+  </section>
 }
 
 function Card({ label, value }: { label: string; value: React.ReactNode }) {

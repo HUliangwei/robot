@@ -23,7 +23,7 @@ import yaml
 from workbench.core.domain import CommandSpec
 from workbench.core.ids import new_id
 from workbench.executors.local import LocalExecutor
-from workbench.providers.lerobot import LeRobotAdapter
+from workbench.providers.registry import get_provider
 from workbench.services.observability import LifecycleEventWriter
 from workbench.storage.catalog import Catalog
 from workbench.storage.manifests import atomic_write_json, atomic_write_yaml, read_json
@@ -192,7 +192,7 @@ class GoldenPathService:
                 f"Dirty source paths: {dirty}"
             )
         recipe = self._recipe(recipe_path)
-        adapter = LeRobotAdapter()
+        adapter = get_provider("lerobot")
 
         recipe_source = Path(recipe_path)
         recipe_resolved = recipe_source.resolve() if recipe_source.is_absolute() else (self.root / recipe_source).resolve()
