@@ -9,6 +9,11 @@ from typing import Any
 from workbench.services.doctor import run_doctor
 from workbench.services.evaluation import compare_catalog_metrics
 from workbench.services.golden_path import GoldenPathService
+from workbench.services.gui_launcher import (
+    build_gui_launch_plan,
+    install_gui_dependencies,
+    start_gui,
+)
 from workbench.services.legacy import scan_legacy_workspace
 from workbench.services.overview import build_overview
 from workbench.services.provider_doctor import list_providers, run_provider_doctor
@@ -158,6 +163,7 @@ Core workflow:
   rlw run preflight <RUN_ID>
   rlw run execute <RUN_ID>
   rlw run reconcile <RUN_ID>
+  rlw gui start
   rlw dev test
 """.strip(),
     )
@@ -231,6 +237,18 @@ Core workflow:
     )
     evaluation_compare.add_argument("run_ids", nargs="+")
     _add_output_flags(evaluation_compare)
+
+    gui = sub.add_parser("gui", help="install and start the local GUI")
+    gui_sub = gui.add_subparsers(dest="gui_command", required=True)
+    gui_install = gui_sub.add_parser("install", help="install local GUI dependencies")
+    _add_output_flags(gui_install)
+    gui_start = gui_sub.add_parser(
+        "start",
+        help="start the API and GUI, then open a browser",
+    )
+    gui_start.add_argument("--no-open", action="store_true", help="do not open a browser")
+    gui_start.add_argument("--api-port", type=int, default=8000)
+    gui_start.add_argument("--gui-port", type=int, default=5173)
 
     # Compatibility surface for pre-R6 scripts.
     golden = sub.add_parser("golden", help="legacy Golden Path compatibility commands")
@@ -446,6 +464,44 @@ def main(argv: list[str] | None = None) -> int:
             inputs={"run_ids": ", ".join(args.run_ids)},
         )
         return 0
+
+    if args.command == "gui":
+        try:
+            if args.gui_command == "install":
+                result = install_gui_dependencies(root)
+                exit_code = int(result["exit_code"])
+                _emit(
+                    "GUI Install",
+                    "Install local GUI dependencies through RLW.",
+                    result,
+                    json_mode=json_mode,
+                    next_steps=(
+                        ["rlw gui start"]
+                        if exit_code == 0
+                        else ["Check Node.js/npm, then retry rlw gui install."]
+                    ),
+                )
+                return exit_code
+
+            plan = build_gui_launch_plan(
+                root,
+                api_port=args.api_port,
+                gui_port=args.gui_port,
+            )
+            return start_gui(plan, open_browser=not args.no_open)
+        except (RuntimeError, ValueError) as exc:
+            result = {
+                "schema_version": "rlw.gui_error/v1",
+                "status": "error",
+                "error": str(exc),
+            }
+            _emit(
+                "GUI " + args.gui_command.title(),
+                "The GUI command could not start.",
+                result,
+                json_mode=json_mode,
+            )
+            return 2
 
     if args.command == "golden":
         return _handle_golden_compat(args, root)

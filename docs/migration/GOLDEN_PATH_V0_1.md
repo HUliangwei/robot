@@ -12,7 +12,7 @@ This incremental patch continues Architecture V3 Task 7 without implementing rem
 - Rebuildable catalog now indexes Run, DatasetRevision, Artifact and MetricRecord records.
 - CLI: `rlw golden detect-revision`, `prepare`, `execute`, `discover`.
 - API/GUI: list Runs/Datasets/Artifacts and prepare a PushT ACT Run.
-- Vite pinned to 7.3.6; run `npm install` after applying to refresh `package-lock.json`.
+- Vite pinned to 7.3.6; run `rlw gui install` after applying to refresh `package-lock.json`.
 
 ## Deliberate boundaries
 

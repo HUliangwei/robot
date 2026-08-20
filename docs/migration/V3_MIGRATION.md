@@ -21,13 +21,12 @@
 ## First acceptance checkpoint
 
 ```bash
-rlw doctor
+rlw system doctor
 rlw legacy scan --write
 rlw catalog rebuild
-rlw overview
-rlw api
+rlw system overview
+rlw gui install
+rlw gui start
 ```
-
-Then `cd gui && npm install && npm run dev`.
 
 The next implementation slice should make **PushT + ACT + LeRobot + LocalExecutor** the canonical Golden Path, producing a new Run directory with resolved config, manifest, Job/Attempt records and checkpoint discovery.

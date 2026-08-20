@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -28,9 +29,16 @@ def create_app(root: str | Path | None = None) -> FastAPI:
     ensure_runtime_dirs(project_root)
     catalog = Catalog(project_root / ".rlw" / "catalog.sqlite3")
     app = FastAPI(title="Robot Learning Workbench API", version="0.4.0")
+    gui_origins = [
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ]
+    configured_origin = os.environ.get("RLW_GUI_ORIGIN")
+    if configured_origin and configured_origin not in gui_origins:
+        gui_origins.append(configured_origin)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+        allow_origins=gui_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST"],
         allow_headers=["*"],

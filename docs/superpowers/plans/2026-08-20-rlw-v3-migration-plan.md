@@ -76,3 +76,11 @@
 - [x] Add resolved config + run manifest + lineage + durable Job/Attempt research metadata.
 - [x] Discover/register checkpoint artifacts without copying upstream training logic.
 - [x] Add Rollout/Evaluation/MetricRecord and compare the same operation via CLI and GUI.
+
+### Task 8: Unified user-facing GUI lifecycle
+
+- [x] Expose GUI dependency installation as `rlw gui install`.
+- [x] Start FastAPI and Vite together through `rlw gui start`.
+- [x] Wait for readiness, open the browser, and stop both process trees on `Ctrl+C`.
+- [x] Support `--no-open`, `--api-port`, and `--gui-port` with clear preflight errors.
+- [x] Keep ordinary user documentation on the `rlw ...` command surface.

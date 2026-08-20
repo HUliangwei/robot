@@ -120,3 +120,14 @@ def test_evaluation_compare_api_uses_shared_metric_contract(tmp_path):
     assert payload["run_ids"] == ["run_a", "run_b"]
     assert payload["rows"][0]["values"] == {"run_a": 0.75, "run_b": 0.9}
     assert payload["rows"][0]["best_run_ids"] == ["run_b"]
+
+
+def test_api_allows_the_gui_origin_selected_by_rlw_gui_start(tmp_path, monkeypatch):
+    origin = "http://127.0.0.1:5200"
+    monkeypatch.setenv("RLW_GUI_ORIGIN", origin)
+    client = TestClient(create_app(tmp_path))
+
+    response = client.get("/api/v1/health", headers={"Origin": origin})
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin

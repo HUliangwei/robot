@@ -37,57 +37,54 @@ robot/
 
 ```powershell
 cd D:\Desktop\robot
+conda activate rlw
 python -m pip install -e ".[dev]"
-python -m workbench.cli.main --root . system init
-cd gui
-npm install
-cd ..
+rlw system init
+rlw gui install
 ```
 
-Python 3.10+ and a current Node.js/npm installation are required.
+Python 3.10+ and a current Node.js/npm installation are required. The
+`python -m pip install` line is the one-time bootstrap that installs the `rlw`
+command; normal operation uses `rlw ...` commands. On this workstation, the
+prepared `rlw` Conda environment uses Python 3.11; the global `python` command
+is older and should not be used for RLW installation.
 
 ## Open the local GUI
 
-The GUI and API are two local processes. Keep both terminals open.
-
-Terminal 1 — start the RLW API:
+Start the API and React GUI together from one terminal:
 
 ```powershell
 cd D:\Desktop\robot
-python -m workbench.cli.main --root . system api
+rlw gui start
 ```
 
-Terminal 2 — start the React GUI:
+RLW waits until both services are ready and opens
+[http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser. Press `Ctrl+C`
+once to stop both process trees.
 
-```powershell
-cd D:\Desktop\robot
-npm --prefix gui run dev
-```
-
-Then open [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser.
 The API health endpoint is
 [http://127.0.0.1:8000/api/v1/health](http://127.0.0.1:8000/api/v1/health),
 and interactive API documentation is available at
 [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
 
-Press `Ctrl+C` in each terminal to stop the GUI and API. If the GUI reports
-`API unavailable`, confirm Terminal 1 is still running and that the health
-endpoint returns `{"status":"ok"}`.
-
-For a non-default API address, set `VITE_RLW_API` before starting the GUI:
+Useful launch options:
 
 ```powershell
-$env:VITE_RLW_API = "http://127.0.0.1:8000/api/v1"
-npm --prefix gui run dev
+rlw gui start --no-open
+rlw gui start --api-port 8100 --gui-port 5200
+rlw gui start --help
 ```
+
+If dependencies are missing, run `rlw gui install`. If a port is occupied,
+RLW reports which port must be changed or released.
 
 Useful control-plane checks:
 
 ```powershell
-python -m workbench.cli.main --root . system doctor
-python -m workbench.cli.main --root . catalog rebuild
-python -m workbench.cli.main --root . system overview
-python -m workbench.cli.main --root . evaluation compare RUN_A RUN_B
+rlw system doctor
+rlw catalog rebuild
+rlw system overview
+rlw evaluation compare RUN_A RUN_B
 ```
 
 ## Development order
