@@ -5,7 +5,7 @@ from workbench.services.test_runner import run_pytest
 
 def test_dev_test_preserves_complete_transcript(tmp_path: Path):
     test_file = tmp_path / "test_sample.py"
-    test_file.write_text("def test_sample():\\n    assert 2 + 2 == 4\\n", encoding="utf-8")
+    test_file.write_text("def test_sample():\n    assert 2 + 2 == 4\n", encoding="utf-8")
     result = run_pytest(tmp_path, quiet=True)
     assert result["exit_code"] == 0
     log = Path(result["log_path"])

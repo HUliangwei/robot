@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RepoRoot,
 
-    [string]$RoundName = "R8_1",
+    [string]$RoundName = "R8_2",
     [switch]$Apply,
     [string]$CommitMessage = "",
     [switch]$Push,
@@ -35,11 +35,12 @@ $applySucceeded = $false
 $verifySucceeded = $false
 $testsSucceeded = $false
 
-Start-Transcript -Path $logPath -Force | Out-Null
+. {
 try {
     Write-Host "RLW UPDATE ROUND"
     Write-Host "------------------------------------------------------------"
     Write-Host ("round      : {0}" -f $RoundName)
+    Write-Host ("timestamp  : {0}" -f (Get-Date -Format "o"))
     Write-Host ("repo       : {0}" -f $RepoRoot)
     Write-Host ("zip        : {0}" -f $ZipPath)
     Write-Host ("log        : {0}" -f $logPath)
@@ -162,8 +163,8 @@ finally {
     if (Test-Path $extractRoot) {
         Remove-Item -Recurse -Force $extractRoot -ErrorAction SilentlyContinue
     }
-    Stop-Transcript | Out-Null
 }
+} *>&1 | Tee-Object -FilePath $logPath
 
 # Normalize the final transcript to UTF-8 with BOM so editors and chat uploads
 # detect the encoding consistently.
