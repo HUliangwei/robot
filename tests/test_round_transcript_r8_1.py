@@ -22,7 +22,8 @@ def test_round_runner_captures_native_command_output(tmp_path: Path):
             "apply_update.py",
             "import sys\n"
             "assert '--dry-run' in sys.argv\n"
-            "print('APPLY-DRY-RUN-NATIVE-OUTPUT')\n",
+            "print('APPLY-DRY-RUN-NATIVE-STDOUT')\n"
+            "print('APPLY-DRY-RUN-NATIVE-STDERR', file=sys.stderr)\n",
         )
         archive.writestr("verify_update.py", "print('VERIFY-NATIVE-OUTPUT')\n")
 
@@ -70,7 +71,10 @@ def test_round_runner_captures_native_command_output(tmp_path: Path):
     logs = list((repo_root / ".rlw" / "logs" / "update_rounds").glob(f"{round_name}_*.log"))
     assert len(logs) == 1
     transcript = logs[0].read_text(encoding="utf-8-sig")
-    assert "APPLY-DRY-RUN-NATIVE-OUTPUT" in transcript
+    assert "APPLY-DRY-RUN-NATIVE-STDOUT" in transcript
+    assert "APPLY-DRY-RUN-NATIVE-STDERR" in transcript
+    assert "RESULT: DRY-RUN ONLY" in transcript
+    assert "ROUND ERROR" not in transcript
     assert "COMMAND: git rev-parse HEAD" in transcript
 
 

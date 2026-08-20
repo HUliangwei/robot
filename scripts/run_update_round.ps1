@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RepoRoot,
 
-    [string]$RoundName = "R8_2",
+    [string]$RoundName = "R8_3",
     [switch]$Apply,
     [string]$CommitMessage = "",
     [switch]$Push,
@@ -34,6 +34,26 @@ $roundFailed = $false
 $applySucceeded = $false
 $verifySucceeded = $false
 $testsSucceeded = $false
+$script:nativeExitCode = 0
+
+function Invoke-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Command
+    )
+
+    # Windows PowerShell 5.1 turns redirected native stderr into ErrorRecord
+    # objects. Convert them to ordinary text so successful commands such as
+    # `git push` can write progress to stderr without becoming terminating errors.
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Command 2>&1 | ForEach-Object { $_.ToString() }
+        $script:nativeExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+}
 
 . {
 try {
@@ -49,11 +69,11 @@ try {
     Write-Host ""
 
     Write-Host "COMMAND: git status -sb"
-    & git -C $RepoRoot status -sb
+    Invoke-NativeCommand { git -C $RepoRoot status -sb }
     Write-Host "COMMAND: git rev-parse HEAD"
-    & git -C $RepoRoot rev-parse HEAD
+    Invoke-NativeCommand { git -C $RepoRoot rev-parse HEAD }
     Write-Host "COMMAND: python --version"
-    & python --version
+    Invoke-NativeCommand { python --version }
     Write-Host "COMMAND: ZIP SHA256"
     (Get-FileHash -Algorithm SHA256 $ZipPath).Hash
 
@@ -72,8 +92,8 @@ try {
 
     Write-Host ""
     Write-Host "COMMAND: apply_update.py --dry-run"
-    & python $applyScript $RepoRoot --dry-run
-    if ($LASTEXITCODE -ne 0) { throw "dry-run failed with exit code $LASTEXITCODE" }
+    Invoke-NativeCommand { python $applyScript $RepoRoot --dry-run }
+    if ($script:nativeExitCode -ne 0) { throw "dry-run failed with exit code $script:nativeExitCode" }
 
     if (-not $Apply) {
         Write-Host ""
@@ -83,30 +103,30 @@ try {
 
     Write-Host ""
     Write-Host "COMMAND: apply_update.py"
-    & python $applyScript $RepoRoot
-    if ($LASTEXITCODE -ne 0) { throw "apply failed with exit code $LASTEXITCODE" }
+    Invoke-NativeCommand { python $applyScript $RepoRoot }
+    if ($script:nativeExitCode -ne 0) { throw "apply failed with exit code $script:nativeExitCode" }
     $applySucceeded = $true
 
     Write-Host ""
     Write-Host "COMMAND: verify_update.py"
-    & python $verifyScript $RepoRoot
-    if ($LASTEXITCODE -eq 0) {
+    Invoke-NativeCommand { python $verifyScript $RepoRoot }
+    if ($script:nativeExitCode -eq 0) {
         $verifySucceeded = $true
     } else {
         $roundFailed = $true
-        Write-Host ("VERIFY FAILED: exit_code={0}" -f $LASTEXITCODE)
+        Write-Host ("VERIFY FAILED: exit_code={0}" -f $script:nativeExitCode)
     }
 
     Write-Host ""
     Write-Host "COMMAND: python -m workbench.cli.main --root <repo> dev test"
     Push-Location $RepoRoot
     try {
-        & python -m workbench.cli.main --root $RepoRoot dev test
-        if ($LASTEXITCODE -eq 0) {
+        Invoke-NativeCommand { python -m workbench.cli.main --root $RepoRoot dev test }
+        if ($script:nativeExitCode -eq 0) {
             $testsSucceeded = $true
         } else {
             $roundFailed = $true
-            Write-Host ("TESTS FAILED: exit_code={0}" -f $LASTEXITCODE)
+            Write-Host ("TESTS FAILED: exit_code={0}" -f $script:nativeExitCode)
         }
     } finally {
         Pop-Location
@@ -114,28 +134,28 @@ try {
 
     Write-Host ""
     Write-Host "COMMAND: git status -sb"
-    & git -C $RepoRoot status -sb
+    Invoke-NativeCommand { git -C $RepoRoot status -sb }
     Write-Host "COMMAND: git diff --stat"
-    & git -C $RepoRoot diff --stat
+    Invoke-NativeCommand { git -C $RepoRoot diff --stat }
 
     $mayCommit = $applySucceeded -and (($verifySucceeded -and $testsSucceeded) -or $CommitOnFailure)
     if ($CommitMessage -and $mayCommit) {
         Write-Host ""
         Write-Host "COMMAND: git add -A"
-        & git -C $RepoRoot add -A
+        Invoke-NativeCommand { git -C $RepoRoot add -A }
         Write-Host "COMMAND: git diff --cached --stat"
-        & git -C $RepoRoot diff --cached --stat
+        Invoke-NativeCommand { git -C $RepoRoot diff --cached --stat }
         Write-Host "COMMAND: git commit"
-        & git -C $RepoRoot commit -m $CommitMessage
-        if ($LASTEXITCODE -ne 0) {
+        Invoke-NativeCommand { git -C $RepoRoot commit -m $CommitMessage }
+        if ($script:nativeExitCode -ne 0) {
             $roundFailed = $true
-            Write-Host ("COMMIT FAILED: exit_code={0}" -f $LASTEXITCODE)
+            Write-Host ("COMMIT FAILED: exit_code={0}" -f $script:nativeExitCode)
         } elseif ($Push) {
             Write-Host "COMMAND: git push"
-            & git -C $RepoRoot push
-            if ($LASTEXITCODE -ne 0) {
+            Invoke-NativeCommand { git -C $RepoRoot push }
+            if ($script:nativeExitCode -ne 0) {
                 $roundFailed = $true
-                Write-Host ("PUSH FAILED: exit_code={0}" -f $LASTEXITCODE)
+                Write-Host ("PUSH FAILED: exit_code={0}" -f $script:nativeExitCode)
             }
         }
     } elseif ($CommitMessage) {
@@ -146,9 +166,9 @@ try {
     Write-Host ""
     Write-Host "FINAL"
     Write-Host "COMMAND: git rev-parse HEAD"
-    & git -C $RepoRoot rev-parse HEAD
+    Invoke-NativeCommand { git -C $RepoRoot rev-parse HEAD }
     Write-Host "COMMAND: git status -sb"
-    & git -C $RepoRoot status -sb
+    Invoke-NativeCommand { git -C $RepoRoot status -sb }
     Write-Host ("round_status: {0}" -f $(if ($roundFailed) { "FAILED" } else { "PASSED" }))
     Write-Host ("round_log   : {0}" -f $logPath)
 }
