@@ -49,6 +49,18 @@ command; normal operation uses `rlw ...` commands. On this workstation, the
 prepared `rlw` Conda environment uses Python 3.11; the global `python` command
 is older and should not be used for RLW installation.
 
+Run ordinary `rlw ...` commands only from `D:\Desktop\robot`. Once RLW starts,
+it selects each child process boundary itself:
+
+- Core/API commands use the Python interpreter that launched `rlw`.
+- GUI commands run npm inside `D:\Desktop\robot\gui`.
+- Provider commands use the environment stored in the Run specification, such
+  as `conda run -n lerobot-win ...`.
+
+Do not manually enter `gui/` or activate a Provider environment before running
+an RLW command. The hidden `--root` override is reserved for tests and update
+automation.
+
 ## Open the local GUI
 
 Start the API and React GUI together from one terminal:
@@ -77,6 +89,10 @@ rlw gui start --help
 
 If dependencies are missing, run `rlw gui install`. If a port is occupied,
 RLW reports which port must be changed or released.
+
+`rlw system doctor` reports the resolved project root, RLW Python executable,
+the Python environment separately from the parent shell's Conda environment,
+Node/npm paths, and GUI installation state.
 
 Useful control-plane checks:
 

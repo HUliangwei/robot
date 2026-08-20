@@ -84,3 +84,19 @@
 - [x] Wait for readiness, open the browser, and stop both process trees on `Ctrl+C`.
 - [x] Support `--no-open`, `--api-port`, and `--gui-port` with clear preflight errors.
 - [x] Keep ordinary user documentation on the `rlw ...` command surface.
+
+### Task 9: Root-scoped command and environment resolution
+
+- [x] Require ordinary `rlw ...` operations to start at the repository root.
+- [x] Keep the hidden `--root` override for tests and update automation.
+- [x] Run GUI npm commands with `gui/` as their actual working directory.
+- [x] Keep Core/API on the RLW Python executable and Provider jobs on their declared environment.
+- [x] Normalize Windows native failures into stable CLI exit codes.
+- [x] Extend `rlw system doctor` with root, executable, Conda, Node/npm, and GUI state.
+
+### Task 10: Next local observability slice
+
+- [ ] Add structured local lifecycle events without introducing full Event Sourcing.
+- [ ] Expose Run/Job/Attempt log summaries through the shared service/API boundary.
+- [ ] Add GUI detail views for logs, artifacts, metrics, and failure categories.
+- [ ] Keep Remote Compute and SSH out of scope until this local boundary is stable.

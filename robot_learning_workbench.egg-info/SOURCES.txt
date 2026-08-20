@@ -8,6 +8,8 @@ robot_learning_workbench.egg-info/requires.txt
 robot_learning_workbench.egg-info/top_level.txt
 tests/test_api.py
 tests/test_catalog.py
+tests/test_cli_root_guard.py
+tests/test_doctor_environment.py
 tests/test_evaluation.py
 tests/test_golden_path.py
 tests/test_golden_preflight_r4.py

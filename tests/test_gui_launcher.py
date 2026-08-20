@@ -76,8 +76,6 @@ def test_gui_launch_plan_wraps_api_and_vite_commands():
     )
     assert plan.gui_argv == (
         "npm.cmd",
-        "--prefix",
-        "gui",
         "run",
         "dev",
         "--",
@@ -86,6 +84,8 @@ def test_gui_launch_plan_wraps_api_and_vite_commands():
         "--port",
         "5200",
     )
+    assert plan.api_cwd == Path("C:/robot").resolve()
+    assert plan.gui_cwd == Path("C:/robot/gui").resolve()
     assert plan.api_url == "http://127.0.0.1:8100/api/v1"
     assert plan.gui_url == "http://127.0.0.1:5200"
     assert plan.env_overrides == {
@@ -145,6 +145,10 @@ def test_start_gui_opens_browser_after_readiness_and_cleans_both_processes(tmp_p
 
     assert exit_code == 0
     assert [item[0] for item in started] == [plan.api_argv, plan.gui_argv]
+    assert [item[1]["cwd"] for item in started] == [
+        tmp_path.resolve(),
+        (tmp_path / "gui").resolve(),
+    ]
     assert ready == [
         (plan.api_url + "/health", "api", "API"),
         (plan.gui_url, "gui", "GUI"),
@@ -181,6 +185,31 @@ def test_start_gui_ctrl_c_cleans_both_processes(tmp_path):
     assert stopped == ["gui", "api"]
 
 
+def test_http_readiness_probe_consumes_the_response_before_closing(monkeypatch):
+    module = importlib.import_module("workbench.services.gui_launcher")
+
+    class _Response:
+        status = 200
+        consumed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            self.consumed = True
+            return b"ok"
+
+    response = _Response()
+    monkeypatch.setattr(module.urllib.request, "urlopen", lambda *_args, **_kwargs: response)
+
+    module._wait_for_http("http://127.0.0.1/health", _Process("api", [None]), "API")
+
+    assert response.consumed is True
+
+
 def test_install_gui_dependencies_runs_npm_inside_project(tmp_path):
     module = importlib.import_module("workbench.services.gui_launcher")
     install_gui_dependencies = getattr(module, "install_gui_dependencies", None)
@@ -210,10 +239,46 @@ def test_install_gui_dependencies_runs_npm_inside_project(tmp_path):
     }
     assert calls == [
         (
-            ("npm.cmd", "--prefix", "gui", "install"),
-            {"cwd": tmp_path.resolve(), "check": False},
+            ("npm.cmd", "install"),
+            {"cwd": (tmp_path / "gui").resolve(), "check": False},
         )
     ]
+
+
+def test_install_gui_dependencies_requires_the_gui_package(tmp_path):
+    module = importlib.import_module("workbench.services.gui_launcher")
+
+    class _Completed:
+        returncode = 0
+
+    with pytest.raises(RuntimeError, match="GUI package.json was not found"):
+        module.install_gui_dependencies(
+            tmp_path,
+            npm_executable="npm.cmd",
+            run_command=lambda *_args, **_kwargs: _Completed(),
+        )
+
+
+def test_install_gui_dependencies_normalizes_windows_native_failure(tmp_path):
+    module = importlib.import_module("workbench.services.gui_launcher")
+    gui = tmp_path / "gui"
+    gui.mkdir()
+    (gui / "package.json").write_text("{}", encoding="utf-8")
+
+    class _Completed:
+        returncode = 4294963238
+
+    result = module.install_gui_dependencies(
+        tmp_path,
+        npm_executable="npm.cmd",
+        run_command=lambda *_args, **_kwargs: _Completed(),
+    )
+
+    assert result == {
+        "schema_version": "rlw.gui_install/v1",
+        "status": "failed",
+        "exit_code": 1,
+    }
 
 
 def test_validate_gui_launch_requires_installed_dependencies(tmp_path):

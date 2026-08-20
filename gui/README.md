@@ -26,6 +26,10 @@ rlw gui install
 rlw gui start
 ```
 
+All commands above run from the repository root. RLW changes the GUI child
+process working directory to `gui/` internally; users should not run npm from
+this directory themselves.
+
 `rlw gui start` starts both FastAPI and Vite, waits for readiness, opens
 `http://127.0.0.1:5173`, and stops both when you press `Ctrl+C`. Use
 `rlw gui start --no-open` for headless use or `rlw gui start --help` for port

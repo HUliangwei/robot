@@ -100,7 +100,8 @@ def _emit_doctor(data: dict[str, Any], *, json_mode: bool) -> None:
     print(f"  required_health     {'READY' if data['healthy_required'] else 'FAILED'}")
     print()
     print("NEXT")
-    print("  > rlw provider doctor lerobot-win")
+    for step in data.get("next_steps") or ["rlw provider doctor lerobot-win"]:
+        print(f"  > {step}")
 
 
 def _emit_provider_doctor(data: dict[str, Any], *, json_mode: bool) -> None:
@@ -167,7 +168,7 @@ Core workflow:
   rlw dev test
 """.strip(),
     )
-    parser.add_argument("--root", help="project root; defaults to auto-detection")
+    parser.add_argument("--root", help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest="command", required=True)
 
     system = sub.add_parser("system", help="control-plane operations")
@@ -337,7 +338,21 @@ def _handle_golden_compat(args: argparse.Namespace, root: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    root = _root(args.root)
+    try:
+        root = _root(args.root)
+    except RuntimeError as exc:
+        print("RLW - Project Root")
+        print("------------------------------------------------------------")
+        print(f"ERROR: {exc}")
+        return 2
+    current_path = Path.cwd().resolve()
+    if args.root is None and current_path != root:
+        print("RLW - Project Root")
+        print("------------------------------------------------------------")
+        print("ERROR: RLW commands must be run from the project root.")
+        print(f"Project root: {root}")
+        print(f"Current path: {current_path}")
+        return 2
     runtime = ensure_runtime_dirs(root)
     catalog = Catalog(root / ".rlw" / "catalog.sqlite3")
     json_mode = bool(getattr(args, "json", False))

@@ -19,6 +19,8 @@ from typing import Any, Callable
 @dataclass(frozen=True)
 class GuiLaunchPlan:
     root: Path
+    api_cwd: Path
+    gui_cwd: Path
     api_argv: tuple[str, ...]
     gui_argv: tuple[str, ...]
     api_url: str
@@ -48,6 +50,8 @@ def build_gui_launch_plan(
     gui_url = f"http://127.0.0.1:{gui_port}"
     return GuiLaunchPlan(
         root=project_root,
+        api_cwd=project_root,
+        gui_cwd=project_root / "gui",
         api_argv=(
             python,
             "-m",
@@ -60,8 +64,6 @@ def build_gui_launch_plan(
         ),
         gui_argv=(
             npm,
-            "--prefix",
-            "gui",
             "run",
             "dev",
             "--",
@@ -86,19 +88,23 @@ def install_gui_dependencies(
     run_command: Callable[..., subprocess.CompletedProcess[Any]] | None = None,
 ) -> dict[str, Any]:
     project_root = Path(root).resolve()
+    gui_root = project_root / "gui"
+    if not (gui_root / "package.json").is_file():
+        raise RuntimeError(f"GUI package.json was not found below {gui_root}")
     npm = npm_executable or shutil.which("npm.cmd" if os.name == "nt" else "npm")
     if not npm:
         raise RuntimeError("npm was not found; install Node.js before installing the GUI")
     run = run_command or subprocess.run
     completed = run(
-        [npm, "--prefix", "gui", "install"],
-        cwd=project_root,
+        [npm, "install"],
+        cwd=gui_root,
         check=False,
     )
+    exit_code = 0 if completed.returncode == 0 else 1
     return {
         "schema_version": "rlw.gui_install/v1",
-        "status": "installed" if completed.returncode == 0 else "failed",
-        "exit_code": int(completed.returncode),
+        "status": "installed" if exit_code == 0 else "failed",
+        "exit_code": exit_code,
     }
 
 
@@ -138,6 +144,7 @@ def _wait_for_http(
         try:
             with urllib.request.urlopen(url, timeout=0.5) as response:
                 if response.status < 500:
+                    response.read()
                     return
         except (OSError, urllib.error.URLError) as exc:
             last_error = str(exc)
@@ -187,10 +194,7 @@ def start_gui(
     pause = sleep or time.sleep
     environment = os.environ.copy()
     environment.update(plan.env_overrides)
-    popen_options: dict[str, Any] = {
-        "cwd": plan.root,
-        "env": environment,
-    }
+    popen_options: dict[str, Any] = {"env": environment}
     if os.name == "nt":
         popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
@@ -203,9 +207,9 @@ def start_gui(
         print(f"API  {plan.api_url}")
         print(f"GUI  {plan.gui_url}")
         print("Press Ctrl+C to stop both services.")
-        api_process = factory(plan.api_argv, **popen_options)
+        api_process = factory(plan.api_argv, cwd=plan.api_cwd, **popen_options)
         processes.append(api_process)
-        gui_process = factory(plan.gui_argv, **popen_options)
+        gui_process = factory(plan.gui_argv, cwd=plan.gui_cwd, **popen_options)
         processes.append(gui_process)
         ready(plan.api_url + "/health", api_process, "API")
         ready(plan.gui_url, gui_process, "GUI")
