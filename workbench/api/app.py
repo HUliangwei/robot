@@ -11,6 +11,7 @@ from workbench.services.doctor import run_doctor
 from workbench.services.golden_path import GoldenPathService
 from workbench.services.legacy import scan_legacy_workspace
 from workbench.services.overview import build_overview
+from workbench.services.provider_doctor import run_provider_doctor
 from workbench.storage.catalog import Catalog
 from workbench.storage.paths import ensure_runtime_dirs, find_project_root
 
@@ -25,7 +26,7 @@ def create_app(root: str | Path | None = None) -> FastAPI:
     project_root = Path(root).resolve() if root is not None else find_project_root()
     ensure_runtime_dirs(project_root)
     catalog = Catalog(project_root / ".rlw" / "catalog.sqlite3")
-    app = FastAPI(title="Robot Learning Workbench API", version="0.3.0")
+    app = FastAPI(title="Robot Learning Workbench API", version="0.4.0")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -61,15 +62,14 @@ def create_app(root: str | Path | None = None) -> FastAPI:
     @app.get("/api/v1/jobs")
     def jobs():
         import json
-
         items = []
         state_root = project_root / ".rlw" / "state" / "jobs"
         if state_root.exists():
             for path in sorted(state_root.rglob("attempt.json"), reverse=True)[:200]:
                 try:
-                    x = json.loads(path.read_text(encoding="utf-8"))
-                    x["_source_path"] = path.relative_to(project_root).as_posix()
-                    items.append(x)
+                    item = json.loads(path.read_text(encoding="utf-8"))
+                    item["_source_path"] = path.relative_to(project_root).as_posix()
+                    items.append(item)
                 except Exception:
                     pass
         return {"items": items}
@@ -78,6 +78,10 @@ def create_app(root: str | Path | None = None) -> FastAPI:
     def providers():
         adapter = LeRobotAdapter()
         return {"items": [{"spec": adapter.spec().__dict__, "capabilities": adapter.capabilities()}]}
+
+    @app.get("/api/v1/providers/{environment}/doctor")
+    def provider_doctor(environment: str):
+        return run_provider_doctor(environment)
 
     @app.get("/api/v1/doctor")
     def doctor():
