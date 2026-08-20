@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
+
+import yaml
+import pytest
 
 from workbench.services.golden_path import GoldenPathService
 from workbench.storage.catalog import Catalog
@@ -85,6 +89,144 @@ native_overrides:
     assert summary["dataset"] == 1
 
 
+def test_prepare_writes_portable_run_research_record(tmp_path: Path):
+    _init_repo(tmp_path)
+    recipe = tmp_path / "recipes" / "train" / "pusht_act.yaml"
+    recipe.parent.mkdir(parents=True)
+    recipe.write_text(
+        "schema_version: rlw.recipe/v1\n"
+        "name: pusht_act_portable\n"
+        "question: Can ACT reproduce PushT?\n"
+        "kind: train\n"
+        "provider: lerobot\n"
+        "policy_type: act\n"
+        "dataset_repo_id: lerobot/pusht\n"
+        "native_overrides:\n  steps: 10\n  batch_size: 2\n",
+        encoding="utf-8",
+    )
+    _commit_all(tmp_path)
+
+    result = GoldenPathService(tmp_path).prepare(
+        recipe,
+        dataset_revision="1" * 40,
+        provider_env="lerobot-win",
+    )
+    run_dir = Path(result["run_dir"])
+    expected_records = (
+        run_dir / "run.yaml",
+        run_dir / "resolved_config.yaml",
+        run_dir / "lineage.json",
+        run_dir / "jobs" / "train" / "job.json",
+    )
+    assert all(path.exists() for path in expected_records), "portable Run record is incomplete"
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    run_spec = yaml.safe_load((run_dir / "run.yaml").read_text(encoding="utf-8"))
+    resolved = yaml.safe_load((run_dir / "resolved_config.yaml").read_text(encoding="utf-8"))
+    lineage = json.loads((run_dir / "lineage.json").read_text(encoding="utf-8"))
+    job = json.loads((run_dir / "jobs" / "train" / "job.json").read_text(encoding="utf-8"))
+
+    assert run_spec == {
+        "schema_version": "rlw.run_spec/v1",
+        "experiment": {
+            "name": "pusht_act_portable",
+            "question": "Can ACT reproduce PushT?",
+        },
+        "dataset": {"repo_id": "lerobot/pusht", "revision": "1" * 40},
+        "policy": {"provider": "lerobot", "architecture": "act"},
+        "training": {
+            "recipe": "recipes/train/pusht_act.yaml",
+            "native_overrides": {"steps": 10, "batch_size": 2},
+        },
+    }
+    assert resolved["schema_version"] == "rlw.resolved_config/v1"
+    assert resolved["run_id"] == result["run_id"]
+    assert resolved["trial_id"] == manifest["trial"]["trial_id"]
+    assert resolved["experiment_id"] == manifest["experiment"]["experiment_id"]
+    assert resolved["dataset_revision"] == "1" * 40
+    assert resolved.get("provider_runtime") == {
+        "conda_env": "lerobot-win",
+        "python_executable": None,
+    }
+    assert resolved.get("git_commit") == manifest["git_commit"]
+    assert lineage == {
+        "schema_version": "rlw.lineage/v1",
+        "run_id": result["run_id"],
+        "dataset": {
+            "dataset_id": "lerobot_pusht",
+            "revision": "1" * 40,
+            "manifest": f"datasets/lerobot_pusht/{'1' * 40}/dataset.yaml",
+        },
+        "parents": [],
+    }
+    assert job["schema_version"] == "rlw.job/v1"
+    assert job["job_id"] == result["job_id"]
+    assert job["run_id"] == result["run_id"]
+    assert job["state"] == "READY"
+    assert job["command"] == f"runs/{result['run_id']}/resolved_command.json"
+    assert manifest["paths"]["run_spec"] == f"runs/{result['run_id']}/run.yaml"
+    assert manifest["paths"]["resolved_config"] == f"runs/{result['run_id']}/resolved_config.yaml"
+    assert manifest["paths"]["lineage"] == f"runs/{result['run_id']}/lineage.json"
+    assert manifest["paths"]["job_record"] == f"runs/{result['run_id']}/jobs/train/job.json"
+
+
+def test_execute_archives_durable_job_and_attempt_records(tmp_path: Path):
+    _init_repo(tmp_path)
+    recipe = tmp_path / "recipe.yaml"
+    recipe.write_text(
+        "schema_version: rlw.recipe/v1\n"
+        "name: portable_attempt\n"
+        "kind: train\n"
+        "provider: lerobot\n"
+        "policy_type: act\n"
+        "dataset_repo_id: lerobot/pusht\n",
+        encoding="utf-8",
+    )
+    fake_lerobot = tmp_path / "lerobot" / "__init__.py"
+    fake_lerobot.parent.mkdir()
+    fake_lerobot.write_text("__version__ = 'test'\n", encoding="utf-8")
+    (tmp_path / "torch.py").write_text(
+        "__version__ = 'test'\n"
+        "class cuda:\n"
+        "    @staticmethod\n"
+        "    def is_available():\n"
+        "        return False\n",
+        encoding="utf-8",
+    )
+    _commit_all(tmp_path)
+
+    service = GoldenPathService(tmp_path)
+    prepared = service.prepare(
+        recipe,
+        dataset_revision="2" * 40,
+        python_executable=sys.executable,
+    )
+    run_dir = Path(prepared["run_dir"])
+    command_path = Path(prepared["command_manifest"])
+    command = json.loads(command_path.read_text(encoding="utf-8"))
+    command["argv"] = [sys.executable, "-c", "print('portable-attempt')"]
+    command_path.write_text(json.dumps(command), encoding="utf-8")
+
+    executed = service.execute(prepared["run_id"])
+    job_path = run_dir / "jobs" / "train" / "job.json"
+    job = json.loads(job_path.read_text(encoding="utf-8"))
+    attempt_path = run_dir / "jobs" / "train" / "attempts" / f"{executed['attempt_id']}.json"
+    assert attempt_path.exists(), "ExecutionAttempt was not archived in the Run record"
+    attempt = json.loads(attempt_path.read_text(encoding="utf-8"))
+
+    assert job["state"] == "SUCCEEDED"
+    assert job["last_attempt_id"] == executed["attempt_id"]
+    assert job["attempt_ids"] == [executed["attempt_id"]]
+    assert job["started_at"]
+    assert job["ended_at"]
+    assert attempt["schema_version"] == "rlw.execution_attempt/v1"
+    assert attempt["attempt_id"] == executed["attempt_id"]
+    assert attempt["job_id"] == prepared["job_id"]
+    assert attempt["state"] == "SUCCEEDED"
+    assert attempt["exit_code"] == 0
+    assert attempt["stdout_path"].startswith(".rlw/state/jobs/")
+    assert attempt["stderr_path"].startswith(".rlw/state/jobs/")
+
+
 def test_prepare_rejects_mutable_or_missing_dataset_revision(tmp_path: Path):
     recipe = tmp_path / "recipe.yaml"
     recipe.write_text(
@@ -100,6 +242,31 @@ def test_prepare_rejects_mutable_or_missing_dataset_revision(tmp_path: Path):
             assert "immutable dataset revision" in str(exc)
         else:
             raise AssertionError(f"revision {revision!r} should fail")
+
+
+def test_prepare_rejects_recipe_outside_project_root(tmp_path: Path):
+    _init_repo(tmp_path)
+    (tmp_path / "tracked.txt").write_text("baseline\n", encoding="utf-8")
+    _commit_all(tmp_path)
+    outside_recipe = tmp_path.with_name(f"{tmp_path.name}_outside_recipe.yaml")
+    outside_recipe.write_text(
+        "schema_version: rlw.recipe/v1\n"
+        "name: outside\n"
+        "kind: train\n"
+        "provider: lerobot\n"
+        "policy_type: act\n"
+        "dataset_repo_id: lerobot/pusht\n",
+        encoding="utf-8",
+    )
+    try:
+        with pytest.raises(ValueError, match="inside the project root"):
+            GoldenPathService(tmp_path).prepare(
+                outside_recipe,
+                dataset_revision="3" * 40,
+                provider_env="lerobot-win",
+            )
+    finally:
+        outside_recipe.unlink(missing_ok=True)
 
 
 def test_discover_registers_checkpoint_and_metrics(tmp_path: Path):

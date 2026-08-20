@@ -6,6 +6,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 def atomic_write_json(path: str | Path, data: Any) -> Path:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -28,6 +30,24 @@ def atomic_write_json(path: str | Path, data: Any) -> Path:
 def read_json(path: str | Path) -> Any:
     with Path(path).open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+def atomic_write_yaml(path: str | Path, data: Any) -> Path:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            yaml.safe_dump(data, handle, sort_keys=False, allow_unicode=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, target)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+        raise
+    return target
 
 def sha256_file(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
     digest = hashlib.sha256()

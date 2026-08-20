@@ -25,7 +25,7 @@ from workbench.core.ids import new_id
 from workbench.executors.local import LocalExecutor
 from workbench.providers.lerobot import LeRobotAdapter
 from workbench.storage.catalog import Catalog
-from workbench.storage.manifests import atomic_write_json, read_json
+from workbench.storage.manifests import atomic_write_json, atomic_write_yaml, read_json
 
 
 _MUTABLE_REVISIONS = {"", "main", "master", "latest", "head"}
@@ -193,6 +193,13 @@ class GoldenPathService:
         recipe = self._recipe(recipe_path)
         adapter = LeRobotAdapter()
 
+        recipe_source = Path(recipe_path)
+        recipe_resolved = recipe_source.resolve() if recipe_source.is_absolute() else (self.root / recipe_source).resolve()
+        try:
+            recipe_ref = recipe_resolved.relative_to(self.root).as_posix()
+        except ValueError as exc:
+            raise ValueError("canonical Run recipes must be inside the project root") from exc
+
         experiment_id = new_id("experiment")
         trial_id = new_id("trial")
         run_id = new_id("run")
@@ -205,15 +212,24 @@ class GoldenPathService:
         output_dir = self.root / output_rel
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        native = dict(recipe.get("native_overrides") or {})
+        requested_native = dict(recipe.get("native_overrides") or {})
+        native = dict(requested_native)
         native["output_dir"] = output_rel.as_posix()
         resolved = {
             "schema_version": "rlw.resolved_config/v1",
-            "recipe": str(Path(recipe_path).as_posix()),
+            "run_id": run_id,
+            "trial_id": trial_id,
+            "experiment_id": experiment_id,
+            "recipe": recipe_ref,
             "provider": "lerobot",
             "policy_type": recipe["policy_type"],
             "dataset_repo_id": recipe["dataset_repo_id"],
             "dataset_revision": revision,
+            "provider_runtime": {
+                "conda_env": provider_env,
+                "python_executable": python_executable,
+            },
+            "git_commit": source_state["commit"],
             "native_overrides": native,
         }
 
@@ -251,10 +267,47 @@ class GoldenPathService:
             if existing.get("dataset_id") != dataset_id or existing.get("revision") != revision:
                 raise ValueError(f"dataset manifest conflict at {dataset_path}")
         else:
-            dataset_path.write_text(
-                yaml.safe_dump(dataset_payload, sort_keys=False, allow_unicode=True),
-                encoding="utf-8",
-            )
+            atomic_write_yaml(dataset_path, dataset_payload)
+
+        run_spec = {
+            "schema_version": "rlw.run_spec/v1",
+            "experiment": {
+                "name": recipe["name"],
+                "question": recipe.get("question", "PushT ACT baseline"),
+            },
+            "dataset": {
+                "repo_id": recipe["dataset_repo_id"],
+                "revision": revision,
+            },
+            "policy": {
+                "provider": "lerobot",
+                "architecture": recipe["policy_type"],
+            },
+            "training": {
+                "recipe": recipe_ref,
+                "native_overrides": requested_native,
+            },
+        }
+        lineage = {
+            "schema_version": "rlw.lineage/v1",
+            "run_id": run_id,
+            "dataset": {
+                "dataset_id": dataset_id,
+                "revision": revision,
+                "manifest": dataset_rel.as_posix(),
+            },
+            "parents": [],
+        }
+        job_record_rel = run_rel / "jobs" / "train" / "job.json"
+        job_record = {
+            "schema_version": "rlw.job/v1",
+            "job_id": job_id,
+            "run_id": run_id,
+            "kind": "train",
+            "state": "READY",
+            "created_at": _utc_now(),
+            "command": (run_rel / "resolved_command.json").as_posix(),
+        }
 
         run_manifest = {
             "schema_version": "rlw.run_manifest/v1",
@@ -282,39 +335,34 @@ class GoldenPathService:
                     "dataset_revision": revision,
                 },
             },
-            "job": {
-                "schema_version": "rlw.job/v1",
-                "job_id": job_id,
-                "run_id": run_id,
-                "kind": "train",
-                "state": "READY",
-            },
+            "job": job_record,
             "provider": adapter.spec().__dict__,
             "provider_runtime": {
                 "conda_env": provider_env,
                 "python_executable": python_executable,
             },
             "resolved_config": resolved,
-            "lineage": {
-                "dataset": {
-                    "dataset_id": dataset_id,
-                    "revision": revision,
-                    "manifest": dataset_rel.as_posix(),
-                },
-                "parents": [],
-            },
+            "lineage": lineage,
             "paths": {
                 "run_dir": run_rel.as_posix(),
+                "run_spec": (run_rel / "run.yaml").as_posix(),
+                "resolved_config": (run_rel / "resolved_config.yaml").as_posix(),
+                "lineage": (run_rel / "lineage.json").as_posix(),
+                "job_record": job_record_rel.as_posix(),
                 "training_output": output_rel.as_posix(),
                 "command": (run_rel / "resolved_command.json").as_posix(),
             },
         }
         run_dir.mkdir(parents=True, exist_ok=True)
-        atomic_write_json(run_dir / "manifest.json", run_manifest)
+        atomic_write_yaml(run_dir / "run.yaml", run_spec)
+        atomic_write_yaml(run_dir / "resolved_config.yaml", resolved)
+        atomic_write_json(run_dir / "lineage.json", lineage)
+        atomic_write_json(self.root / job_record_rel, job_record)
         atomic_write_json(run_dir / "resolved_command.json", command_payload)
+        atomic_write_json(run_dir / "manifest.json", run_manifest)
         atomic_write_json(
             self.root / ".rlw" / "state" / "jobs" / job_id / "job.json",
-            run_manifest["job"],
+            job_record,
         )
         self.catalog.rebuild(self.root)
         return {
@@ -324,6 +372,10 @@ class GoldenPathService:
             "job_id": job_id,
             "run_dir": str(run_dir),
             "run_manifest": str(run_dir / "manifest.json"),
+            "run_spec": str(run_dir / "run.yaml"),
+            "resolved_config": str(run_dir / "resolved_config.yaml"),
+            "lineage": str(run_dir / "lineage.json"),
+            "job_record": str(self.root / job_record_rel),
             "dataset_manifest": str(dataset_path),
             "command_manifest": str(run_dir / "resolved_command.json"),
         }
@@ -524,24 +576,65 @@ class GoldenPathService:
             env=command_data.get("env") or {},
         )
         job_id = manifest["job"]["job_id"]
+        job_record_rel = (manifest.get("paths") or {}).get("job_record")
+        if job_record_rel:
+            job_record_path = self.root / str(job_record_rel)
+        else:
+            job_record_path = run_dir / "jobs" / str(manifest["job"].get("kind") or "train") / "job.json"
+            manifest.setdefault("paths", {})["job_record"] = job_record_path.relative_to(self.root).as_posix()
+        job_record = read_json(job_record_path) if job_record_path.exists() else dict(manifest["job"])
+        started_at = _utc_now()
+        job_record["state"] = "RUNNING"
+        job_record["started_at"] = started_at
         manifest["status"] = "RUNNING"
-        manifest["job"]["state"] = "RUNNING"
-        manifest["started_at"] = _utc_now()
+        manifest["job"] = job_record
+        manifest["started_at"] = started_at
         manifest["preflight"] = preflight
+        atomic_write_json(job_record_path, job_record)
         atomic_write_json(manifest_path, manifest)
 
         result = LocalExecutor(self.root).run(job_id, command)
         manifest = read_json(manifest_path)
+        ended_at = _utc_now()
+        stdout_rel = Path(result.stdout_path).relative_to(self.root).as_posix()
+        stderr_rel = Path(result.stderr_path).relative_to(self.root).as_posix()
+        runtime_attempt_rel = Path(result.attempt_path).relative_to(self.root).as_posix()
+        attempt_record = read_json(result.attempt_path)
+        attempt_record.update(
+            {
+                "stdout_path": stdout_rel,
+                "stderr_path": stderr_rel,
+                "runtime_record_path": runtime_attempt_rel,
+            }
+        )
+        attempt_record_path = job_record_path.parent / "attempts" / f"{result.attempt_id}.json"
+        atomic_write_json(attempt_record_path, attempt_record)
+
+        job_record = read_json(job_record_path)
+        attempt_ids = list(job_record.get("attempt_ids") or [])
+        if result.attempt_id not in attempt_ids:
+            attempt_ids.append(result.attempt_id)
+        job_record.update(
+            {
+                "state": result.state,
+                "ended_at": ended_at,
+                "last_attempt_id": result.attempt_id,
+                "attempt_ids": attempt_ids,
+            }
+        )
+        atomic_write_json(job_record_path, job_record)
+
         manifest["status"] = result.state
-        manifest["job"]["state"] = result.state
-        manifest["ended_at"] = _utc_now()
+        manifest["job"] = job_record
+        manifest["ended_at"] = ended_at
         manifest["last_attempt"] = {
             "attempt_id": result.attempt_id,
             "state": result.state,
             "exit_code": result.exit_code,
-            "stdout_path": Path(result.stdout_path).relative_to(self.root).as_posix(),
-            "stderr_path": Path(result.stderr_path).relative_to(self.root).as_posix(),
-            "attempt_path": Path(result.attempt_path).relative_to(self.root).as_posix(),
+            "stdout_path": stdout_rel,
+            "stderr_path": stderr_rel,
+            "attempt_path": attempt_record_path.relative_to(self.root).as_posix(),
+            "runtime_attempt_path": runtime_attempt_rel,
         }
         atomic_write_json(manifest_path, manifest)
         discovered = self.discover(run_id)
