@@ -687,12 +687,49 @@ class GoldenPathService:
                 atomic_write_json(record_root / "artifacts" / artifact_id / "artifact.json", payload)
                 artifacts += 1
 
+            for kind, directory_name in (
+                ("rollout", "rollouts"),
+                ("evaluation", "evaluation"),
+            ):
+                for produced_dir in sorted(output_dir.rglob(directory_name)):
+                    if not produced_dir.is_dir():
+                        continue
+                    rel = produced_dir.relative_to(self.root).as_posix()
+                    artifact_id = "artifact_" + hashlib.sha256(
+                        f"{run_id}|{kind}|{rel}".encode()
+                    ).hexdigest()[:16]
+                    payload = {
+                        "schema_version": "rlw.artifact/v1",
+                        "artifact_id": artifact_id,
+                        "kind": kind,
+                        "display_name": produced_dir.name,
+                        "producer_run": run_id,
+                        "replicas": [
+                            {
+                                "schema_version": "rlw.artifact_replica/v1",
+                                "node_id": "local",
+                                "uri": rel,
+                                "state": "AVAILABLE",
+                                "persistent": True,
+                                "cache": False,
+                                "pinned": False,
+                            }
+                        ],
+                    }
+                    atomic_write_json(
+                        record_root / "artifacts" / artifact_id / "artifact.json",
+                        payload,
+                    )
+                    artifacts += 1
+
             for metrics_path in sorted(output_dir.rglob("metrics.json")):
                 try:
                     data = json.loads(metrics_path.read_text(encoding="utf-8"))
                 except (OSError, json.JSONDecodeError):
                     continue
-                for name, value in sorted(data.items()):
+                for name, raw_value in sorted(data.items()):
+                    metadata = raw_value if isinstance(raw_value, dict) else {}
+                    value = metadata.get("value") if metadata else raw_value
                     if isinstance(value, bool) or not isinstance(value, (int, float)):
                         continue
                     source_rel = metrics_path.relative_to(self.root).as_posix()
@@ -704,9 +741,20 @@ class GoldenPathService:
                         "name": str(name),
                         "value": float(value),
                         "namespace": "lerobot",
-                        "scope": metrics_path.parent.relative_to(output_dir).as_posix(),
+                        "scope": metadata.get("scope")
+                        or metrics_path.parent.relative_to(output_dir).as_posix(),
                         "source": source_rel,
                     }
+                    for key in (
+                        "unit",
+                        "direction",
+                        "aggregation",
+                        "episodes",
+                        "provider",
+                        "definition_version",
+                    ):
+                        if metadata.get(key) is not None:
+                            metric_payload[key] = metadata[key]
                     atomic_write_json(record_root / "metrics" / metric_id / "metric.json", metric_payload)
                     metrics += 1
 

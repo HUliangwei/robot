@@ -75,4 +75,4 @@
 - [x] Convert **PushT + ACT + LeRobot + LocalExecutor** into the first canonical new Run flow.
 - [x] Add resolved config + run manifest + lineage + durable Job/Attempt research metadata.
 - [x] Discover/register checkpoint artifacts without copying upstream training logic.
-- [ ] Add Rollout/Evaluation/MetricRecord and compare the same operation via CLI and GUI.
+- [x] Add Rollout/Evaluation/MetricRecord and compare the same operation via CLI and GUI.

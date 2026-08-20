@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from workbench.services.doctor import run_doctor
+from workbench.services.evaluation import compare_catalog_metrics
 from workbench.services.golden_path import GoldenPathService
 from workbench.services.legacy import scan_legacy_workspace
 from workbench.services.overview import build_overview
@@ -222,6 +223,15 @@ Core workflow:
     test.add_argument("--quiet", action="store_true", help="use pytest -q")
     test.add_argument("--show-output", action="store_true", help="also pass -s to pytest")
 
+    evaluation = sub.add_parser("evaluation", help="inspect and compare MetricRecords")
+    evaluation_sub = evaluation.add_subparsers(dest="evaluation_command", required=True)
+    evaluation_compare = evaluation_sub.add_parser(
+        "compare",
+        help="compare the same metrics across Runs",
+    )
+    evaluation_compare.add_argument("run_ids", nargs="+")
+    _add_output_flags(evaluation_compare)
+
     # Compatibility surface for pre-R6 scripts.
     golden = sub.add_parser("golden", help="legacy Golden Path compatibility commands")
     golden_sub = golden.add_subparsers(dest="golden_command", required=True)
@@ -424,6 +434,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "dev":
         result = run_pytest(root, quiet=args.quiet, show_output=args.show_output)
         return int(result["exit_code"])
+
+    if args.command == "evaluation":
+        catalog.rebuild(root)
+        result = compare_catalog_metrics(catalog, args.run_ids)
+        _emit(
+            "Evaluation Compare",
+            "Compare cataloged MetricRecords across Runs.",
+            result,
+            json_mode=json_mode,
+            inputs={"run_ids": ", ".join(args.run_ids)},
+        )
+        return 0
 
     if args.command == "golden":
         return _handle_golden_compat(args, root)

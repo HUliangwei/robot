@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { buildJobRows, type AttemptRecord, type JobRecord } from './jobRecords'
+import {
+  buildMetricComparisonPath,
+  type MetricComparison,
+} from './metricComparison'
 import './styles.css'
 
 type Overview = {
@@ -74,6 +78,8 @@ function App() {
   const [message, setMessage] = useState('')
   const [preflight, setPreflight] = useState<Record<string, Preflight>>({})
   const [busyRun, setBusyRun] = useState('')
+  const [compareRunIds, setCompareRunIds] = useState<string[]>([])
+  const [comparison, setComparison] = useState<MetricComparison | null>(null)
 
   const refresh = () => Promise.all([
     getJson<Overview>('/overview'),
@@ -121,10 +127,30 @@ function App() {
     }
   }
 
+  const toggleCompareRun = (runId: string) => {
+    setCompareRunIds(current => current.includes(runId)
+      ? current.filter(item => item !== runId)
+      : [...current, runId])
+    setComparison(null)
+  }
+
+  const compareRuns = async () => {
+    try {
+      const result = await getJson<MetricComparison>(
+        buildMetricComparisonPath(compareRunIds),
+      )
+      setComparison(result)
+      setError('')
+    } catch (e) {
+      setError(`评测比较失败 Evaluation compare failed: ${String(e)}`)
+    }
+  }
+
   const tabs = [
     ['overview', '总览 Overview'],
     ['runs', '运行 Runs'],
     ['jobs', '任务与尝试 Jobs / Attempts'],
+    ['evaluation', '评测比较 Evaluation Compare'],
     ['datasets', '数据集 Datasets'],
     ['artifacts', '产物 Artifacts'],
     ['legacy', '遗留资产 Legacy Assets'],
@@ -169,6 +195,13 @@ function App() {
 
       {tab === 'runs' && <RunRecords items={runs} preflight={preflight} busyRun={busyRun} onPreflight={runPreflight} />}
       {tab === 'jobs' && <JobRecords jobs={jobs} attempts={attempts} />}
+      {tab === 'evaluation' && <EvaluationCompare
+        runs={runs}
+        selectedRunIds={compareRunIds}
+        comparison={comparison}
+        onToggle={toggleCompareRun}
+        onCompare={compareRuns}
+      />}
       {tab === 'datasets' && <Records title="数据集版本 Dataset Revisions" empty="暂无数据集版本 No dataset revisions yet." items={datasets} keys={['dataset_id', 'revision', 'immutable']} />}
       {tab === 'artifacts' && <Records title="产物 Artifacts" empty="暂无产物 No artifacts yet." items={artifacts} keys={['artifact_id', 'kind', 'display_name', 'producer_run']} />}
       {tab === 'legacy' && <section className="panel"><div className="panelTitle">检测到的遗留项目 Detected Legacy Projects</div><div className="chips">{overview?.legacy.project_names.map(x => <span className="chip" key={x}>{x}</span>)}</div></section>}
@@ -228,6 +261,58 @@ function JobRecords({ jobs, attempts }: { jobs: JobRecord[]; attempts: AttemptRe
           </div>)}
         </div></div>
       </div>)}
+    </div>}
+  </section>
+}
+
+function EvaluationCompare({
+  runs,
+  selectedRunIds,
+  comparison,
+  onToggle,
+  onCompare,
+}: {
+  runs: any[]
+  selectedRunIds: string[]
+  comparison: MetricComparison | null
+  onToggle: (runId: string) => void
+  onCompare: () => void
+}) {
+  return <section className="panel">
+    <div className="panelTitle">评测指标比较 Evaluation Metric Compare</div>
+    <p className="muted">选择至少两个运行；CLI 使用同一比较服务：<code>rlw evaluation compare RUN_A RUN_B</code></p>
+    <div className="compareRuns">
+      {runs.map(run => <label className="compareChoice" key={run.run_id}>
+        <input
+          type="checkbox"
+          checked={selectedRunIds.includes(run.run_id)}
+          onChange={() => onToggle(run.run_id)}
+        />
+        <span className="mono">{run.run_id}</span>
+      </label>)}
+    </div>
+    {runs.length === 0 && <p className="muted">暂无运行可比较 No Runs available.</p>}
+    <button className="primary" onClick={onCompare} disabled={selectedRunIds.length < 2}>
+      比较指标 Compare Metrics
+    </button>
+    {comparison && <div className="metricTableWrap"><table className="metricTable">
+      <thead><tr>
+        <th>指标 Metric</th>
+        <th>范围 Scope</th>
+        <th>方向 Direction</th>
+        {comparison.run_ids.map(runId => <th className="mono" key={runId}>{runId}</th>)}
+      </tr></thead>
+      <tbody>{comparison.rows.map(row => <tr key={row.metric_key}>
+        <td><b>{row.namespace}:{row.name}</b><small>{row.unit || '—'}</small></td>
+        <td>{row.scope || 'global'}</td>
+        <td>{row.direction || 'unspecified'}</td>
+        {comparison.run_ids.map(runId => <td
+          className={row.best_run_ids.includes(runId) ? 'bestMetric' : ''}
+          key={runId}
+        >{row.values[runId] ?? '—'}</td>)}
+      </tr>)}</tbody>
+    </table>
+    {comparison.rows.length === 0 && <p className="muted">所选运行没有可比较的同源指标 No comparable MetricRecords.</p>}
     </div>}
   </section>
 }

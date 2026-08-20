@@ -269,7 +269,7 @@ def test_prepare_rejects_recipe_outside_project_root(tmp_path: Path):
         outside_recipe.unlink(missing_ok=True)
 
 
-def test_discover_registers_checkpoint_and_metrics(tmp_path: Path):
+def test_discover_registers_checkpoint_rollout_evaluation_and_metrics(tmp_path: Path):
     _init_repo(tmp_path)
     recipe = tmp_path / "recipe.yaml"
     recipe.write_text(
@@ -285,18 +285,39 @@ def test_discover_registers_checkpoint_and_metrics(tmp_path: Path):
     ckpt = output_dir / "checkpoints" / "000010" / "pretrained_model"
     ckpt.mkdir(parents=True)
     (ckpt / "config.json").write_text("{}", encoding="utf-8")
-    metrics = output_dir / "eval_step_000010" / "official" / "metrics.json"
+    rollout = output_dir / "rollouts" / "episode_000"
+    rollout.mkdir(parents=True)
+    (rollout / "episode.json").write_text('{"success": true}', encoding="utf-8")
+    metrics = output_dir / "evaluation" / "metrics.json"
     metrics.parent.mkdir(parents=True)
-    metrics.write_text('{"success_rate": 0.75, "reward": 12.5}', encoding="utf-8")
+    metrics.write_text(
+        '{"success_rate": {"value": 0.75, "unit": "ratio", '
+        '"direction": "higher_is_better", "aggregation": "mean", '
+        '"scope": "task", "episodes": 20, "definition_version": "pusht/v1"}, '
+        '"reward": 12.5}',
+        encoding="utf-8",
+    )
 
     discovered = service.discover(prepared["run_id"])
-    assert discovered["artifacts"] >= 1
+    assert discovered["artifacts"] == 3
     assert discovered["metrics"] == 2
 
     catalog = Catalog(tmp_path / ".rlw" / "catalog.sqlite3")
     summary = catalog.rebuild(tmp_path)
-    assert summary["artifact"] >= 1
+    assert summary["artifact"] == 3
     assert summary["metric"] == 2
+    assert {item["kind"] for item in catalog.list_records("artifact")} == {
+        "checkpoint",
+        "rollout",
+        "evaluation",
+    }
+    success = next(item for item in catalog.list_records("metric") if item["name"] == "success_rate")
+    assert success["unit"] == "ratio"
+    assert success["direction"] == "higher_is_better"
+    assert success["aggregation"] == "mean"
+    assert success["scope"] == "task"
+    assert success["episodes"] == 20
+    assert success["definition_version"] == "pusht/v1"
 
     again = service.discover(prepared["run_id"])
     assert again["artifacts"] >= 1

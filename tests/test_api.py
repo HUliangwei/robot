@@ -80,3 +80,43 @@ def test_overview_counts_durable_jobs_and_attempts(tmp_path):
 
     assert catalog.get("jobs") == 1
     assert catalog.get("attempts") == 1
+
+
+def test_evaluation_compare_api_uses_shared_metric_contract(tmp_path):
+    for run_id, value in (("run_a", 0.75), ("run_b", 0.9)):
+        atomic_write_json(
+            tmp_path
+            / "runs"
+            / run_id
+            / "records"
+            / "metrics"
+            / f"metric_{run_id}"
+            / "metric.json",
+            {
+                "schema_version": "rlw.metric_record/v1",
+                "metric_id": f"metric_{run_id}",
+                "run_id": run_id,
+                "name": "success_rate",
+                "namespace": "pusht",
+                "scope": "task",
+                "unit": "ratio",
+                "direction": "higher_is_better",
+                "aggregation": "mean",
+                "definition_version": "pusht/v1",
+                "value": value,
+            },
+        )
+    Catalog(tmp_path / ".rlw" / "catalog.sqlite3").rebuild(tmp_path)
+    client = TestClient(create_app(tmp_path))
+
+    response = client.get(
+        "/api/v1/evaluation/compare",
+        params=[("run_id", "run_a"), ("run_id", "run_b")],
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema_version"] == "rlw.metric_comparison/v1"
+    assert payload["run_ids"] == ["run_a", "run_b"]
+    assert payload["rows"][0]["values"] == {"run_a": 0.75, "run_b": 0.9}
+    assert payload["rows"][0]["best_run_ids"] == ["run_b"]

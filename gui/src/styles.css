@@ -20,3 +20,10 @@
 .attemptList > div { display: grid; gap: 6px; }
 .attemptRow { display: grid; grid-template-columns: minmax(180px, 1fr) 100px 80px; gap: 10px; padding: 7px 9px; background: #f6f8f9; border-radius: 7px; font-size: 12px; }
 @media (max-width: 700px) { .attemptRow { grid-template-columns: 1fr; } }
+.compareRuns { display: flex; flex-wrap: wrap; gap: .65rem; margin: 1rem 0; }
+.compareChoice { display: flex; align-items: center; gap: .45rem; padding: .55rem .7rem; border: 1px solid #dfe5e9; border-radius: .6rem; }
+.metricTableWrap { overflow-x: auto; margin-top: 1.1rem; }
+.metricTable { width: 100%; border-collapse: collapse; }
+.metricTable th, .metricTable td { border-bottom: 1px solid #edf0f2; padding: .75rem; text-align: left; vertical-align: top; }
+.metricTable td small { display: block; color: #6c7882; margin-top: .25rem; }
+.bestMetric { color: #087b5d; font-weight: 700; background: rgba(19, 156, 120, .08); }

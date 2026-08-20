@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from workbench.providers.lerobot import LeRobotAdapter
 from workbench.services.doctor import run_doctor
+from workbench.services.evaluation import compare_catalog_metrics
 from workbench.services.golden_path import GoldenPathService
 from workbench.services.legacy import scan_legacy_workspace
 from workbench.services.overview import build_overview
@@ -66,6 +67,13 @@ def create_app(root: str | Path | None = None) -> FastAPI:
     @app.get("/api/v1/attempts")
     def attempts():
         return {"items": catalog.list_records("attempt")}
+
+    @app.get("/api/v1/evaluation/compare")
+    def evaluation_compare(run_ids: list[str] = Query(alias="run_id")):
+        try:
+            return compare_catalog_metrics(catalog, run_ids)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/v1/providers")
     def providers():
