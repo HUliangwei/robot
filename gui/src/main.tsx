@@ -7,84 +7,200 @@ type Overview = {
   catalog: { runs: number; datasets: number; total_records: number }
   legacy: { projects: number; project_names: string[] }
 }
-
-type Doctor = {
-  platform: string
-  checks: Record<string, { ok: boolean; value?: string | null }>
-}
+type Doctor = { platform: string; checks: Record<string, { ok: boolean; value?: string | null }> }
+type ListResponse = { items: any[] }
+type Preflight = { run_id: string; ok: boolean; checks: Array<{ name: string; ok: boolean; required: boolean; detail?: any }> }
 
 const API = (import.meta as any).env?.VITE_RLW_API ?? 'http://127.0.0.1:8000/api/v1'
 
 async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API}${path}`)
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
-  return response.json() as Promise<T>
+  const r = await fetch(`${API}${path}`)
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
+  return r.json()
+}
+
+async function postJson<T>(path: string, body: any = {}): Promise<T> {
+  const r = await fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) {
+    const text = await r.text()
+    throw new Error(text)
+  }
+  return r.json()
+}
+
+const doctorLabels: Record<string, string> = {
+  python: 'Python 运行时 Python Runtime',
+  git: 'Git 版本控制 Git',
+  project_root: '项目根目录 Project Root',
+  workspace: '工作区 Workspace',
+  node: 'Node.js 运行时 Node.js Runtime',
+  npm: '前端包管理器 npm',
+  nvidia_smi: 'NVIDIA 驱动 NVIDIA SMI',
+  torch: 'PyTorch Provider 依赖',
+  lerobot: 'LeRobot Provider 依赖',
+}
+
+const preflightLabels: Record<string, string> = {
+  git_commit_match: 'Git 提交匹配 Git Commit Match',
+  prepared_from_clean_source: '准备时源码干净 Clean Source at Prepare',
+  source_tree_clean: '当前源码干净 Source Tree Clean',
+  dataset_manifest_valid: '数据集清单有效 Dataset Manifest',
+  dataset_revision_available: '数据集版本缓存 Dataset Revision Cache',
+  command_spec_valid: '命令规范 CommandSpec',
+  output_directory_writable: '输出目录可写 Output Directory',
+  provider_runtime_resolved: 'Provider 环境 Provider Runtime',
+  lerobot_import: 'LeRobot 导入 LeRobot Import',
+  torch_import: 'PyTorch 导入 PyTorch Import',
+  cuda_available: 'CUDA 可用 CUDA Available',
+  provider_probe: 'Provider 探测 Provider Probe',
 }
 
 function App() {
   const [overview, setOverview] = useState<Overview | null>(null)
   const [doctor, setDoctor] = useState<Doctor | null>(null)
+  const [runs, setRuns] = useState<any[]>([])
+  const [datasets, setDatasets] = useState<any[]>([])
+  const [artifacts, setArtifacts] = useState<any[]>([])
   const [error, setError] = useState('')
-  const [tab, setTab] = useState<'overview' | 'legacy' | 'doctor'>('overview')
+  const [tab, setTab] = useState('overview')
+  const [revision, setRevision] = useState('')
+  const [message, setMessage] = useState('')
+  const [preflight, setPreflight] = useState<Record<string, Preflight>>({})
+  const [busyRun, setBusyRun] = useState('')
 
-  useEffect(() => {
-    Promise.all([getJson<Overview>('/overview'), getJson<Doctor>('/doctor')])
-      .then(([o, d]) => { setOverview(o); setDoctor(d) })
-      .catch((e) => setError(String(e)))
-  }, [])
+  const refresh = () => Promise.all([
+    getJson<Overview>('/overview'),
+    getJson<Doctor>('/doctor'),
+    getJson<ListResponse>('/runs'),
+    getJson<ListResponse>('/datasets'),
+    getJson<ListResponse>('/artifacts'),
+  ]).then(([o, d, r, ds, a]) => {
+    setOverview(o)
+    setDoctor(d)
+    setRuns(r.items)
+    setDatasets(ds.items)
+    setArtifacts(a.items)
+    setError('')
+  }).catch(e => setError(String(e)))
 
-  const requiredOk = useMemo(() => {
-    if (!doctor) return 0
-    return Object.values(doctor.checks).filter((x) => x.ok).length
-  }, [doctor])
+  useEffect(() => { refresh() }, [])
+  const ok = useMemo(() => doctor ? Object.values(doctor.checks).filter(x => x.ok).length : 0, [doctor])
+
+  const prepare = async () => {
+    setMessage('')
+    try {
+      const x: any = await postJson('/golden/prepare', { dataset_revision: revision, provider_env: 'lerobot-win' })
+      setMessage(`已准备 Prepared: ${x.run_id}`)
+      await refresh()
+      setTab('runs')
+    } catch (e) {
+      setMessage(`准备失败 Prepare failed: ${String(e)}`)
+    }
+  }
+
+  const runPreflight = async (runId: string) => {
+    setBusyRun(runId)
+    try {
+      const report = await postJson<Preflight>(`/runs/${runId}/preflight`)
+      setPreflight(prev => ({ ...prev, [runId]: report }))
+    } catch (e) {
+      setError(`预检失败 Preflight failed: ${String(e)}`)
+    } finally {
+      setBusyRun('')
+    }
+  }
+
+  const tabs = [
+    ['overview', '总览 Overview'],
+    ['runs', '运行 Runs'],
+    ['datasets', '数据集 Datasets'],
+    ['artifacts', '产物 Artifacts'],
+    ['legacy', '遗留资产 Legacy Assets'],
+    ['doctor', '节点检查 Node Doctor'],
+  ]
 
   return <div className="shell">
     <aside>
       <div className="brand"><span className="dot" />RLW</div>
-      <p className="subtitle">Robot Learning Workbench</p>
-      {(['overview','legacy','doctor'] as const).map((name) =>
-        <button className={tab === name ? 'nav active' : 'nav'} onClick={() => setTab(name)} key={name}>
-          {name === 'overview' ? 'Overview' : name === 'legacy' ? 'Legacy Assets' : 'Node Doctor'}
-        </button>
-      )}
-      <div className="footer">API <code>127.0.0.1:8000</code></div>
+      <p className="subtitle">机器人学习工作台 Robot Learning Workbench</p>
+      {tabs.map(([k, l]) => <button key={k} className={tab === k ? 'nav active' : 'nav'} onClick={() => setTab(k)}>{l}</button>)}
+      <div className="footer">接口 API <code>127.0.0.1:8000</code></div>
     </aside>
     <main>
       <header>
-        <div><div className="eyebrow">LOCAL CONTROL PLANE</div><h1>{overview?.node.id ?? 'Connecting…'}</h1></div>
-        <div className="pill">V3 · local-first</div>
+        <div><div className="eyebrow">本地控制平面 Local Control Plane</div><h1>{overview?.node.id ?? '连接中 Connecting…'}</h1></div>
+        <div className="pill">V3 · 本地优先 local-first</div>
       </header>
-      {error && <div className="error">API unavailable: {error}<br/>先运行 <code>rlw api</code></div>}
+      {error && <div className="error">接口不可用 API unavailable: {error}</div>}
+
       {tab === 'overview' && <>
         <section className="grid">
-          <Card label="Catalog Runs" value={overview?.catalog.runs ?? '—'} />
-          <Card label="Dataset Revisions" value={overview?.catalog.datasets ?? '—'} />
-          <Card label="Legacy Projects" value={overview?.legacy.projects ?? '—'} />
-          <Card label="Doctor Checks" value={doctor ? `${requiredOk}/${Object.keys(doctor.checks).length}` : '—'} />
+          <Card label="运行记录 Catalog Runs" value={overview?.catalog.runs ?? '—'} />
+          <Card label="数据集版本 Dataset Revisions" value={overview?.catalog.datasets ?? '—'} />
+          <Card label="遗留项目 Legacy Projects" value={overview?.legacy.projects ?? '—'} />
+          <Card label="检测项 Doctor Checks" value={doctor ? `${ok}/${Object.keys(doctor.checks).length}` : '—'} />
         </section>
         <section className="panel">
-          <div className="panelTitle">Current migration boundary</div>
-          <p>现有 <code>workspace/</code> 继续作为 legacy research assets；新实验逐步进入 Experiment → Trial → Run → Job → ExecutionAttempt。</p>
-          <div className="flow"><b>Legacy Assets</b><span>→</span><b>Candidate Scan</b><span>→</span><b>Reviewed Import</b><span>→</span><b>RLW Catalog</b></div>
+          <div className="panelTitle">PushT + ACT 标准路径 Golden Path</div>
+          <p>准备 Prepare 会创建不可变数据集版本 DatasetRevision、实验 Experiment → 试验 Trial → 运行 Run → 任务 Job 元数据，并生成解析配置 Resolved Config 与命令规范 CommandSpec。</p>
+          <p className="muted">真正执行会产生执行尝试 ExecutionAttempt；训练逻辑仍由 LeRobot Provider 负责。</p>
+          <div className="formrow">
+            <input value={revision} onChange={e => setRevision(e.target.value)} placeholder="不可变数据集版本 / Immutable Dataset Revision / Commit SHA" />
+            <button className="primary" onClick={prepare} disabled={!revision.trim()}>准备 PushT ACT 运行 Prepare Run</button>
+          </div>
+          {message && <p className="muted">{message}</p>}
+          <p className="muted">执行前先做预检 Preflight；长时间训练仍从 CLI 执行：<code>rlw golden execute &lt;run_id&gt;</code></p>
         </section>
       </>}
-      {tab === 'legacy' && <section className="panel">
-        <div className="panelTitle">Detected legacy projects</div>
-        <div className="chips">{overview?.legacy.project_names.map((x) => <span className="chip" key={x}>{x}</span>)}</div>
-        <p className="muted">运行 <code>rlw legacy scan --write</code> 生成只读候选清单。不会自动猜测历史 Git commit、Dataset revision 或 Run 边界。</p>
-      </section>}
-      {tab === 'doctor' && <section className="panel">
-        <div className="panelTitle">Node capabilities</div>
-        <div className="checks">{doctor && Object.entries(doctor.checks).map(([name, item]) =>
-          <div className="check" key={name}><span className={item.ok ? 'ok' : 'bad'}>{item.ok ? '●' : '○'}</span><b>{name}</b><span className="muted">{item.value ?? ''}</span></div>
-        )}</div>
-      </section>}
+
+      {tab === 'runs' && <RunRecords items={runs} preflight={preflight} busyRun={busyRun} onPreflight={runPreflight} />}
+      {tab === 'datasets' && <Records title="数据集版本 Dataset Revisions" empty="暂无数据集版本 No dataset revisions yet." items={datasets} keys={['dataset_id', 'revision', 'immutable']} />}
+      {tab === 'artifacts' && <Records title="产物 Artifacts" empty="暂无产物 No artifacts yet." items={artifacts} keys={['artifact_id', 'kind', 'display_name', 'producer_run']} />}
+      {tab === 'legacy' && <section className="panel"><div className="panelTitle">检测到的遗留项目 Detected Legacy Projects</div><div className="chips">{overview?.legacy.project_names.map(x => <span className="chip" key={x}>{x}</span>)}</div></section>}
+      {tab === 'doctor' && <section className="panel"><div className="panelTitle">节点能力 Node Capabilities</div><div className="checks">{doctor && Object.entries(doctor.checks).map(([n, x]) => <div className="check" key={n}><span className={x.ok ? 'ok' : 'bad'}>{x.ok ? '●' : '○'}</span><b>{doctorLabels[n] ?? n}</b><span className="muted">{x.value ?? ''}</span></div>)}</div></section>}
     </main>
   </div>
 }
 
-function Card({label, value}: {label: string; value: React.ReactNode}) {
+function Card({ label, value }: { label: string; value: React.ReactNode }) {
   return <div className="card"><div className="label">{label}</div><div className="value">{value}</div></div>
+}
+
+function RunRecords({ items, preflight, busyRun, onPreflight }: { items: any[]; preflight: Record<string, Preflight>; busyRun: string; onPreflight: (runId: string) => void }) {
+  return <section className="panel">
+    <div className="panelTitle">标准运行 Canonical Runs</div>
+    {items.length === 0 ? <p className="muted">暂无运行 No runs yet.</p> : <div className="records">
+      {items.map(run => {
+        const report = preflight[run.run_id]
+        return <div className="record runRecord" key={run.run_id}>
+          <div><span className="recordKey">运行 ID Run ID</span><span>{run.run_id}</span></div>
+          <div><span className="recordKey">状态 Status</span><span>{run.status}</span></div>
+          <div><span className="recordKey">Git 提交 Git Commit</span><span className="mono">{run.git_commit ?? ''}</span></div>
+          <div className="runActions"><button className="secondary" onClick={() => onPreflight(run.run_id)} disabled={busyRun === run.run_id}>{busyRun === run.run_id ? '预检中 Checking…' : '预检 Preflight'}</button></div>
+          {report && <PreflightPanel report={report} />}
+        </div>
+      })}
+    </div>}
+  </section>
+}
+
+function PreflightPanel({ report }: { report: Preflight }) {
+  return <div className={report.ok ? 'preflightBox passBox' : 'preflightBox failBox'}>
+    <div className="preflightTitle">{report.ok ? '预检通过 Preflight PASS' : '预检未通过 Preflight FAIL'}</div>
+    <div className="preflightChecks">{report.checks.map(item => <div className="preflightCheck" key={item.name}>
+      <span className={item.ok ? 'ok' : item.required ? 'bad' : 'warn'}>{item.ok ? '●' : item.required ? '●' : '○'}</span>
+      <span>{preflightLabels[item.name] ?? item.name}</span>
+      <small>{item.required ? '必需 Required' : '建议 Advisory'}</small>
+    </div>)}</div>
+  </div>
+}
+
+function Records({ title, empty, items, keys }: { title: string; empty: string; items: any[]; keys: string[] }) {
+  return <section className="panel"><div className="panelTitle">{title}</div>{items.length === 0 ? <p className="muted">{empty}</p> : <div className="records">{items.map((x, i) => <div className="record" key={x.run_id ?? x.dataset_id ?? x.artifact_id ?? i}>{keys.map(k => <div key={k}><span className="recordKey">{k}</span><span>{String(x[k] ?? '')}</span></div>)}</div>)}</div>}</section>
 }
 
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>)

@@ -7,7 +7,11 @@ dataset_repo_id: lerobot/pusht
 native_overrides:
   steps: 25000
   batch_size: 8
-  seed: 1000
+  save_freq: 5000
+  save_checkpoint: true
+  env_eval_freq: 0
+  eval_steps: 0
+  wandb.enable: false
 notes: >-
-  Command template only. Resolve against the installed LeRobot version before launching;
-  the adapter deliberately does not reimplement LeRobot training logic.
+  V0 golden path. RLW injects an immutable dataset revision and a run-scoped
+  output_dir, then delegates training to LeRobot without reimplementing it.

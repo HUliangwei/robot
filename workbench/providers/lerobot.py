@@ -6,11 +6,17 @@ from typing import Any
 from workbench.core.domain import CommandSpec, ProviderSpec
 
 
+def _stringify(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 class LeRobotAdapter:
     def spec(self) -> ProviderSpec:
         return ProviderSpec(
             name="lerobot",
-            adapter_version="0.1",
+            adapter_version="0.2",
             capabilities=("dataset", "train", "rollout", "eval", "hardware"),
         )
 
@@ -19,6 +25,7 @@ class LeRobotAdapter:
             "provider": "lerobot",
             "jobs": ["train", "rollout", "evaluate"],
             "native_config_passthrough": True,
+            "execution_modes": ["conda_env", "python_executable"],
         }
 
     def validate(self, config: dict[str, Any]) -> list[str]:
@@ -32,17 +39,40 @@ class LeRobotAdapter:
     def resolve_config(self, config: dict[str, Any]) -> dict[str, Any]:
         return dict(config)
 
-    def build_command(self, job_kind: str, config: dict[str, Any]) -> CommandSpec:
+    def build_command(
+        self,
+        job_kind: str,
+        config: dict[str, Any],
+        *,
+        provider_env: str | None = None,
+        python_executable: str | None = None,
+        cwd: str | None = None,
+    ) -> CommandSpec:
         if job_kind != "train":
-            raise NotImplementedError(f"LeRobot V0 adapter only builds train commands, got {job_kind!r}")
+            raise NotImplementedError(
+                f"LeRobot V0 adapter only builds train commands, got {job_kind!r}"
+            )
         errors = self.validate({**config, "job_kind": job_kind})
         if errors:
             raise ValueError("; ".join(errors))
-        argv = [
-            "lerobot-train",
+        if provider_env and python_executable:
+            raise ValueError("choose provider_env or python_executable, not both")
+
+        if python_executable:
+            argv = [python_executable]
+        elif provider_env:
+            argv = ["conda", "run", "-n", provider_env, "python"]
+        else:
+            argv = ["python"]
+
+        argv += [
+            "-m",
+            "lerobot.scripts.lerobot_train",
             f"--policy.type={config['policy_type']}",
             f"--dataset.repo_id={config['dataset_repo_id']}",
         ]
+        if config.get("dataset_revision"):
+            argv.append(f"--dataset.revision={config['dataset_revision']}")
         for key, value in sorted((config.get("native_overrides") or {}).items()):
-            argv.append(f"--{key}={value}")
-        return CommandSpec(tuple(argv))
+            argv.append(f"--{key}={_stringify(value)}")
+        return CommandSpec(tuple(argv), cwd=cwd)

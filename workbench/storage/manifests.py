@@ -1,12 +1,10 @@
 from __future__ import annotations
-
 import hashlib
 import json
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
-
 
 def atomic_write_json(path: str | Path, data: Any) -> Path:
     target = Path(path)
@@ -27,11 +25,9 @@ def atomic_write_json(path: str | Path, data: Any) -> Path:
         raise
     return target
 
-
 def read_json(path: str | Path) -> Any:
     with Path(path).open("r", encoding="utf-8") as handle:
         return json.load(handle)
-
 
 def sha256_file(path: str | Path, chunk_size: int = 1024 * 1024) -> str:
     digest = hashlib.sha256()

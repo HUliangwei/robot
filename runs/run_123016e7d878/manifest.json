@@ -1,0 +1,77 @@
+{
+  "created_at": "2026-08-19T21:07:11.961602+00:00",
+  "experiment": {
+    "experiment_id": "experiment_9a686ee7986b",
+    "name": "pusht_act_baseline",
+    "question": "PushT ACT baseline",
+    "schema_version": "rlw.experiment/v1"
+  },
+  "git_commit": "7963cb9572717ffd07ba965b236c2d3c04d6153c",
+  "job": {
+    "job_id": "job_d2085f13d191",
+    "kind": "train",
+    "run_id": "run_123016e7d878",
+    "schema_version": "rlw.job/v1",
+    "state": "READY"
+  },
+  "lineage": {
+    "dataset": {
+      "dataset_id": "lerobot_pusht",
+      "manifest": "datasets/lerobot_pusht/b1c3ecbae7f244acc039a3dbc255a00dad1372b9/dataset.yaml",
+      "revision": "b1c3ecbae7f244acc039a3dbc255a00dad1372b9"
+    },
+    "parents": []
+  },
+  "paths": {
+    "command": "runs/run_123016e7d878/resolved_command.json",
+    "run_dir": "runs/run_123016e7d878",
+    "training_output": "runs/run_123016e7d878/artifacts/training"
+  },
+  "provider": {
+    "adapter_version": "0.2",
+    "capabilities": [
+      "dataset",
+      "train",
+      "rollout",
+      "eval",
+      "hardware"
+    ],
+    "name": "lerobot",
+    "schema_version": "rlw.provider_spec/v1",
+    "version": null
+  },
+  "provider_runtime": {
+    "conda_env": "lerobot-win",
+    "python_executable": null
+  },
+  "resolved_config": {
+    "dataset_repo_id": "lerobot/pusht",
+    "dataset_revision": "b1c3ecbae7f244acc039a3dbc255a00dad1372b9",
+    "native_overrides": {
+      "batch_size": 8,
+      "env_eval_freq": 0,
+      "eval_steps": 0,
+      "output_dir": "runs/run_123016e7d878/artifacts/training",
+      "save_checkpoint": true,
+      "save_freq": 5000,
+      "steps": 25000,
+      "wandb.enable": false
+    },
+    "policy_type": "act",
+    "provider": "lerobot",
+    "recipe": "recipes/train/pusht_act.yaml",
+    "schema_version": "rlw.resolved_config/v1"
+  },
+  "run_id": "run_123016e7d878",
+  "schema_version": "rlw.run_manifest/v1",
+  "status": "READY",
+  "trial": {
+    "experiment_id": "experiment_9a686ee7986b",
+    "resolved_variables": {
+      "dataset_revision": "b1c3ecbae7f244acc039a3dbc255a00dad1372b9",
+      "policy_type": "act"
+    },
+    "schema_version": "rlw.trial/v1",
+    "trial_id": "trial_6c48cc2447c3"
+  }
+}

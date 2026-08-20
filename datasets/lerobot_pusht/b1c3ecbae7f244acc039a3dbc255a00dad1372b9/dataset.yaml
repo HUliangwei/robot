@@ -1,0 +1,9 @@
+schema_version: rlw.dataset_manifest/v1
+dataset_id: lerobot_pusht
+revision: b1c3ecbae7f244acc039a3dbc255a00dad1372b9
+source:
+  provider: huggingface
+  repo_id: lerobot/pusht
+  revision: b1c3ecbae7f244acc039a3dbc255a00dad1372b9
+immutable: true
+created_at: '2026-08-19T21:07:11.959092+00:00'
