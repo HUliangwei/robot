@@ -404,6 +404,11 @@ def _handle_golden_compat(args: argparse.Namespace, root: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
     args = build_parser().parse_args(argv)
     try:
         root = _root(args.root)
