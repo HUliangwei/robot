@@ -23,15 +23,48 @@ def test_starvla_install_plan_is_side_effect_free_and_uses_upstream_stable_branc
     assert plan["python_version"] == "3.10"
     assert plan["confirmation"] == "starvla"
     assert plan["executed"] is False
-    assert [step["id"] for step in plan["steps"]] == [
-        "clone", "create_environment", "install_pytorch", "install_requirements", "install_editable"
-    ]
+    step_ids = [step["id"] for step in plan["steps"]]
+    assert step_ids[:3] == ["clone", "create_environment", "install_pytorch"]
+    assert step_ids[-2:] == ["install_requirements", "install_editable"]
+    requirements_step = next(step for step in plan["steps"] if step["id"] == "install_requirements")
+    assert requirements_step["env"] == {
+        "DS_BUILD_OPS": "0", "DS_SKIP_CUDA_CHECK": "1"
+    }
+    if __import__("os").name == "nt":
+        assert step_ids[3:6] == [
+            "install_cython", "install_accumulation_tree", "install_deepspeed"
+        ]
+        deepspeed_step = next(step for step in plan["steps"] if step["id"] == "install_deepspeed")
+        assert "github.com/deepspeedai/DeepSpeed.git@v0.16.9" in deepspeed_step["argv"][8]
     assert plan["steps"][0]["argv"] == [
         "git", "clone", "--branch", "starVLA", "--single-branch",
         "https://github.com/starVLA/starVLA.git", str(checkout.resolve()),
     ]
     assert plan["manual_requirements"][0]["name"] == "flash-attn"
     assert not (tmp_path / ".rlw").exists(), "planning must not mutate machine state"
+
+
+def test_starvla_install_plan_reuses_existing_environment_and_pytorch(tmp_path: Path):
+    prefix = tmp_path / "envs" / "starvla"
+    python = prefix / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    history = prefix / "conda-meta" / "history"
+    history.parent.mkdir()
+    history.touch()
+    site_packages = prefix / "Lib" / "site-packages"
+    (site_packages / "torch-2.6.0+cu124.dist-info").mkdir(parents=True)
+    (site_packages / "torchvision-0.21.0+cu124.dist-info").mkdir()
+
+    plan = build_provider_install_plan(tmp_path, "starvla")
+
+    assert [step["id"] for step in plan["steps"]][1:3] == [
+        "verify_environment", "verify_pytorch"
+    ]
+    if __import__("os").name == "nt":
+        assert "install_cython" in [step["id"] for step in plan["steps"]]
+        assert "install_deepspeed" in [step["id"] for step in plan["steps"]]
+    assert plan["steps"][1]["argv"][0] == str(python)
 
 
 def test_install_rejects_mismatched_confirmation_before_running_any_step(tmp_path: Path):
@@ -92,8 +125,8 @@ def test_successful_install_registers_runtime_only_after_all_steps(tmp_path: Pat
 
     runtime = read_provider_runtime(tmp_path, "starvla")
     assert result["status"] == "SUCCEEDED"
-    assert result["steps_completed"] == 5
-    assert len(calls) == 5
+    assert result["steps_completed"] == len(plan["steps"])
+    assert len(calls) == len(plan["steps"])
     assert runtime is not None
     assert runtime["environment"] == "vla-local"
     assert runtime["checkout_root"] == str(checkout)

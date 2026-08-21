@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,11 +17,12 @@ def _conda_executable() -> str:
     return shutil.which("conda.exe" if __import__("os").name == "nt" else "conda") or "conda"
 
 
-def _run(argv: list[str], *, cwd: str | None = None) -> dict[str, Any]:
+def _run(argv: list[str], *, cwd: str | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
     try:
         completed = subprocess.run(
             argv,
             cwd=cwd,
+            env={**os.environ, **(env or {})},
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -84,15 +86,47 @@ def build_provider_install_plan(
             "cwd": str(checkout.parent),
             "required": True,
         }
-    steps = [
-        checkout_step,
+    prefix_python = selected_prefix / "python.exe" if selected_prefix else None
+    environment_ready = bool(
+        prefix_python
+        and prefix_python.is_file()
+        and (selected_prefix / "conda-meta" / "history").is_file()
+    )
+    create_step = (
         {
+            "id": "verify_environment",
+            "argv": [str(prefix_python), "-c", "import sys; assert sys.version_info[:2] == (3, 10)"],
+            "cwd": str(Path(root).resolve()),
+            "required": True,
+        }
+        if environment_ready
+        else {
             "id": "create_environment",
             "argv": [conda, "create", f"python={python_version}", *selector, "-y"],
             "cwd": str(Path(root).resolve()),
             "required": True,
-        },
+        }
+    )
+    site_packages = selected_prefix / "Lib" / "site-packages" if selected_prefix else None
+    pytorch_ready = bool(
+        site_packages
+        and prefix_python
+        and prefix_python.is_file()
+        and any(site_packages.glob("torch-2.6.0+cu124.dist-info"))
+        and any(site_packages.glob("torchvision-0.21.0+cu124.dist-info"))
+    )
+    pytorch_step = (
         {
+            "id": "verify_pytorch",
+            "argv": [
+                str(prefix_python), "-c",
+                "import torch,torchvision; assert torch.cuda.is_available()",
+            ],
+            "cwd": str(checkout),
+            "required": True,
+        }
+        if pytorch_ready
+        else {
             "id": "install_pytorch",
             "argv": [
                 conda, "run", *selector, "python", "-m", "pip", "install",
@@ -101,13 +135,80 @@ def build_provider_install_plan(
             ],
             "cwd": str(checkout),
             "required": True,
-        },
+        }
+    )
+    compatibility_steps: list[dict[str, Any]] = []
+    if os.name == "nt":
+        cython_ready = bool(
+            site_packages
+            and any(site_packages.glob("Cython-*.dist-info"))
+            and any(site_packages.glob("accumulation_tree-0.6.4.dist-info"))
+        )
+        if cython_ready:
+            compatibility_steps.append({
+                "id": "verify_windows_build_prerequisites",
+                "argv": [
+                    str(prefix_python), "-c", "import Cython, accumulation_tree",
+                ],
+                "cwd": str(checkout),
+                "required": True,
+            })
+        else:
+            compatibility_steps.extend([
+                {
+                    "id": "install_cython",
+                    "argv": [
+                        conda, "run", *selector, "python", "-m", "pip",
+                        "install", "Cython<3",
+                    ],
+                    "cwd": str(checkout),
+                    "required": True,
+                },
+                {
+                    "id": "install_accumulation_tree",
+                    "argv": [
+                        conda, "run", *selector, "python", "-m", "pip",
+                        "install", "accumulation-tree==0.6.4",
+                        "--no-build-isolation", "--no-cache-dir",
+                    ],
+                    "cwd": str(checkout),
+                    "required": True,
+                },
+            ])
+        deepspeed_ready = bool(
+            site_packages and any(site_packages.glob("deepspeed-0.16.9*.dist-info"))
+        )
+        compatibility_steps.append({
+            "id": "verify_deepspeed" if deepspeed_ready else "install_deepspeed",
+            "argv": (
+                [
+                    str(prefix_python), "-c",
+                    "from importlib.metadata import version; "
+                    "assert version('deepspeed').startswith('0.16.9')",
+                ]
+                if deepspeed_ready
+                else [
+                    conda, "run", *selector, "python", "-m", "pip", "install",
+                    "deepspeed @ git+https://github.com/deepspeedai/DeepSpeed.git@v0.16.9",
+                    "--no-build-isolation", "--no-deps",
+                ]
+            ),
+            "env": {"DS_BUILD_OPS": "0", "DS_SKIP_CUDA_CHECK": "1"},
+            "cwd": str(checkout),
+            "required": True,
+        })
+    steps = [
+        checkout_step,
+        create_step,
+        pytorch_step,
+        *compatibility_steps,
         {
             "id": "install_requirements",
             "argv": [
                 conda, "run", *selector, "python", "-m", "pip",
                 "install", "--no-build-isolation", "-r", str(checkout / "requirements.txt"),
             ],
+            "env": {"DS_BUILD_OPS": "0", "DS_SKIP_CUDA_CHECK": "1"},
             "cwd": str(checkout),
             "required": True,
         },
@@ -161,7 +262,12 @@ def execute_provider_install(
     checkout.parent.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
     for step in plan.get("steps") or []:
-        raw = execute(list(step["argv"]), cwd=step.get("cwd"))
+        if runner is None:
+            raw = execute(
+                list(step["argv"]), cwd=step.get("cwd"), env=step.get("env") or {}
+            )
+        else:
+            raw = execute(list(step["argv"]), cwd=step.get("cwd"))
         result = {
             "id": step["id"],
             "ok": bool(raw.get("ok")),
