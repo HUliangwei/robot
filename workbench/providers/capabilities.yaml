@@ -1,0 +1,10 @@
+lerobot:
+  policies:
+    - ACT
+    - Diffusion Policy
+  datasets:
+    - HuggingFace
+
+starvla:
+  policies:
+    - Transformer

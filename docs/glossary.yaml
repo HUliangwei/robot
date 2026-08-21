@@ -1,0 +1,19 @@
+Experiment:
+  name_cn: 实验
+  description_cn: 一个完整研究目标的定义，包含数据、模型和评价方式。
+
+Trial:
+  name_cn: 实验配置
+  description_cn: Experiment 下的一组参数组合。
+
+Run:
+  name_cn: 运行实例
+  description_cn: 一次确定配置下的执行记录。
+
+Job:
+  name_cn: 执行任务
+  description_cn: 可被 Executor 执行的任务。
+
+ExecutionAttempt:
+  name_cn: 执行尝试
+  description_cn: Job 的一次实际运行。
