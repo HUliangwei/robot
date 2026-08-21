@@ -182,3 +182,17 @@ def test_starvla_default_install_is_project_prefix_scoped(tmp_path: Path):
     requirements = next(step for step in plan["steps"] if step["id"] == "install_requirements")
     assert create["argv"][-3:] == ["--prefix", str(prefix), "-y"]
     assert requirements["argv"][1:4] == ["run", "--prefix", str(prefix)]
+
+def test_preflight_writability_probe_does_not_create_native_output_dir(tmp_path: Path):
+    recipe = _init_repo(tmp_path)
+    service = GoldenPathService(tmp_path)
+    prepared = service.prepare(
+        recipe, dataset_revision="a" * 40, python_executable=sys.executable
+    )
+    output = Path(prepared["run_dir"]) / "artifacts" / "training"
+
+    first = service.preflight(prepared["run_id"], probe_provider=False)
+    second = service.preflight(prepared["run_id"], probe_provider=False)
+
+    assert first["ok"] is True and second["ok"] is True
+    assert not output.exists()

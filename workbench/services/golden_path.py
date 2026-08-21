@@ -234,7 +234,6 @@ class GoldenPathService:
         run_dir = self.root / run_rel
         output_rel = run_rel / "artifacts" / "training"
         output_dir = self.root / output_rel
-        output_dir.mkdir(parents=True, exist_ok=True)
 
         requested_native = dict(recipe.get("native_overrides") or {})
         native = dict(requested_native)
@@ -609,12 +608,19 @@ class GoldenPathService:
         if output_rel:
             output_dir = self.root / str(output_rel)
             try:
+                created_for_probe = not output_dir.exists()
                 output_dir.mkdir(parents=True, exist_ok=True)
                 with tempfile.NamedTemporaryFile(prefix=".rlw_preflight_", dir=output_dir, delete=True):
                     pass
                 writable = True
             except OSError as exc:
                 output_detail = str(exc)
+            finally:
+                if created_for_probe and output_dir.is_dir():
+                    try:
+                        output_dir.rmdir()
+                    except OSError:
+                        pass
         checks.append(_check("output_directory_writable", writable, output_detail))
 
         provider_name = str((manifest.get("provider") or {}).get("name") or "lerobot")
