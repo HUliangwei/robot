@@ -60,7 +60,7 @@ attempt with diagnostics, never converted into a fixture success.
 
 Training and evaluation use separate durable Jobs and ExecutionAttempts below
 the same Run. Evaluation output is written below
-`artifacts/evaluation/`, and reconcile remains idempotent. Native results are
+`artifacts/training/evaluation/`, and reconcile remains idempotent. Native results are
 normalized into MetricRecords without discarding their original files.
 
 ## Safety

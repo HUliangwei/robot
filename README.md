@@ -158,8 +158,14 @@ rlw provider doctor starvla
 
 The managed plan uses `D:\Desktop\robot\envs\starvla`, bootstraps the
 CUDA-compatible Torch/torchvision pair before installing requirements, and
-uses no-build-isolation for packages such as DeepSpeed that inspect Torch.
-It registers the runtime only after every required step succeeds.
+is idempotent when rerun. On Windows it builds `accumulation-tree` with Cython
+and installs the Python-only DeepSpeed 0.16.9 control plane from the matching
+official Git tag because the PyPI source archive omits its Windows launcher;
+CUDA extensions stay disabled for the SDPA smoke recipe. The runtime is
+registered only after every required step succeeds. `pipablepytorch3d` may
+still report its upstream Windows platform warning, while Doctor and the
+native StarVLA/Accelerate/DeepSpeed entrypoint smoke remain independently
+verifiable.
 FlashAttention remains explicit because its build must match CUDA and PyTorch;
 RLW does not silently mutate host drivers or CUDA.
 
@@ -197,8 +203,10 @@ rlw run reconcile RUN_ID
 ```
 
 The StarVLA recipe limits the native trainer to one step, but still requires
-real Provider-native model and LIBERO assets. RLW reports missing assets instead
-of substituting PushT or a fixture.
+real Provider-native model and LIBERO assets before `execute` can finish a
+training step. `doctor` and `preflight` validate the official checkout,
+interpreter, CUDA, native config, and imports without downloading a multi-GB
+model. RLW never substitutes PushT or a fixture for missing StarVLA assets.
 
 The local flow is **Preflight → Execute → Evaluate → Inspect → Reconcile** when
 the selected Provider/recipe supports evaluation. `execute` repeats required
