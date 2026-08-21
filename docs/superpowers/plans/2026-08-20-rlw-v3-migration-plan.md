@@ -118,8 +118,8 @@
 
 ### Task 13: Complete the StarVLA local Provider lifecycle
 
-- [ ] Add auditable Provider configure/install commands and machine-local runtime records.
-- [ ] Generalize canonical Run preparation and preflight through the Provider registry.
-- [ ] Execute a controlled StarVLA fixture through LocalExecutor and reconcile its checkpoint.
-- [ ] Expose Provider runtime/install-plan state through API and GUI without GUI subprocess logic.
-- [ ] Keep remote nodes, SSH, and host-level CUDA/driver mutation out of scope.
+- [x] Add auditable Provider configure/install commands and machine-local runtime records.
+- [x] Generalize canonical Run preparation and preflight through the Provider registry.
+- [x] Execute a controlled StarVLA fixture through LocalExecutor and reconcile its checkpoint.
+- [x] Expose Provider runtime/install-plan state through API and GUI without GUI subprocess logic.
+- [x] Keep remote nodes, SSH, and host-level CUDA/driver mutation out of scope.

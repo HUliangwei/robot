@@ -24,7 +24,7 @@ def test_starvla_install_plan_is_side_effect_free_and_uses_upstream_stable_branc
     assert plan["confirmation"] == "starvla"
     assert plan["executed"] is False
     assert [step["id"] for step in plan["steps"]] == [
-        "clone", "create_environment", "install_requirements", "install_editable"
+        "clone", "create_environment", "install_pytorch", "install_requirements", "install_editable"
     ]
     assert plan["steps"][0]["argv"] == [
         "git", "clone", "--branch", "starVLA", "--single-branch",
@@ -92,8 +92,8 @@ def test_successful_install_registers_runtime_only_after_all_steps(tmp_path: Pat
 
     runtime = read_provider_runtime(tmp_path, "starvla")
     assert result["status"] == "SUCCEEDED"
-    assert result["steps_completed"] == 4
-    assert len(calls) == 4
+    assert result["steps_completed"] == 5
+    assert len(calls) == 5
     assert runtime is not None
     assert runtime["environment"] == "vla-local"
     assert runtime["checkout_root"] == str(checkout)

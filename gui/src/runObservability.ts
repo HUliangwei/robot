@@ -86,7 +86,7 @@ export function buildRunObservabilityPath(runId: string): string {
 
 export function buildRunActionPath(
   runId: string,
-  action: 'execute' | 'reconcile',
+  action: 'execute' | 'evaluate' | 'reconcile',
 ): string {
   const normalized = runId.trim()
   if (!normalized) throw new Error('Run ID is required')

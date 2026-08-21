@@ -42,6 +42,7 @@ def build_provider_install_plan(
     provider: str,
     *,
     environment: str | None = None,
+    conda_prefix: str | Path | None = None,
     provider_root: str | Path | None = None,
     repository: str | None = None,
     revision: str | None = None,
@@ -56,6 +57,12 @@ def build_provider_install_plan(
         else Path(root).resolve() / ".rlw" / "providers" / name / "source"
     )
     selected_environment = environment or registration.default_environment
+    selected_prefix = (
+        Path(conda_prefix).expanduser().resolve()
+        if conda_prefix
+        else (Path(root).resolve() / "envs" / name if environment is None else None)
+    )
+    selector = ["--prefix", str(selected_prefix)] if selected_prefix else ["-n", selected_environment]
     selected_repository = repository or registration.install_repository
     selected_revision = revision or registration.install_revision or "main"
     python_version = registration.install_python or "3.10"
@@ -81,15 +88,25 @@ def build_provider_install_plan(
         checkout_step,
         {
             "id": "create_environment",
-            "argv": [conda, "create", "-n", selected_environment, f"python={python_version}", "-y"],
+            "argv": [conda, "create", f"python={python_version}", *selector, "-y"],
             "cwd": str(Path(root).resolve()),
+            "required": True,
+        },
+        {
+            "id": "install_pytorch",
+            "argv": [
+                conda, "run", *selector, "python", "-m", "pip", "install",
+                "torch==2.6.0", "torchvision==0.21.0",
+                "--index-url", "https://download.pytorch.org/whl/cu124",
+            ],
+            "cwd": str(checkout),
             "required": True,
         },
         {
             "id": "install_requirements",
             "argv": [
-                conda, "run", "-n", selected_environment, "python", "-m", "pip",
-                "install", "-r", str(checkout / "requirements.txt"),
+                conda, "run", *selector, "python", "-m", "pip",
+                "install", "--no-build-isolation", "-r", str(checkout / "requirements.txt"),
             ],
             "cwd": str(checkout),
             "required": True,
@@ -97,7 +114,7 @@ def build_provider_install_plan(
         {
             "id": "install_editable",
             "argv": [
-                conda, "run", "-n", selected_environment, "python", "-m", "pip",
+                conda, "run", *selector, "python", "-m", "pip",
                 "install", "-e", str(checkout),
             ],
             "cwd": str(checkout),
@@ -108,6 +125,7 @@ def build_provider_install_plan(
         "schema_version": "rlw.provider_install_plan/v1",
         "provider": name,
         "environment": selected_environment,
+        "conda_prefix": str(selected_prefix) if selected_prefix else None,
         "checkout_root": str(checkout),
         "repository": selected_repository,
         "revision": selected_revision,
@@ -162,13 +180,15 @@ def execute_provider_install(
                 "steps": results,
                 "runtime": None,
             }
-    runtime = configure_provider_runtime(
-        root,
-        provider,
-        environment=str(plan["environment"]),
-        provider_root=checkout,
-        source={"repository": plan.get("repository"), "revision": plan.get("revision")},
-    )
+    runtime_args: dict[str, Any] = {
+        "provider_root": checkout,
+        "source": {"repository": plan.get("repository"), "revision": plan.get("revision")},
+    }
+    if plan.get("conda_prefix"):
+        runtime_args["conda_prefix"] = str(plan["conda_prefix"])
+    else:
+        runtime_args["environment"] = str(plan["environment"])
+    runtime = configure_provider_runtime(root, provider, **runtime_args)
     return {
         "schema_version": "rlw.provider_install_result/v1",
         "provider": provider,

@@ -88,14 +88,29 @@ def run_provider_doctor(
     target: str = "lerobot",
     *,
     environment: str | None = None,
+    conda_prefix: str | Path | None = None,
+    python_executable: str | Path | None = None,
     provider_root: str | Path | None = None,
 ) -> dict[str, Any]:
     provider, selected_environment = _resolve_target(target, environment)
     registration = get_registration(provider)
+    if sum(bool(item) for item in (environment, conda_prefix, python_executable)) > 1:
+        raise ValueError("choose environment, conda_prefix, or python_executable, not more than one")
     conda = _resolve_conda()
+    exact_python: Path | None = None
+    if conda_prefix:
+        prefix = Path(conda_prefix).expanduser().resolve()
+        exact_python = prefix / ("python.exe" if os.name == "nt" else "bin/python")
+    elif python_executable:
+        exact_python = Path(python_executable).expanduser().resolve()
+    uses_conda_name = exact_python is None
     checks: dict[str, dict[str, Any]] = {
-        "conda": {"ok": conda is not None, "value": conda, "required": True},
+        "conda": {"ok": conda is not None, "value": conda, "required": uses_conda_name},
     }
+    if exact_python is not None:
+        checks["python_executable"] = {
+            "ok": exact_python.is_file(), "value": str(exact_python), "required": True
+        }
     if provider_root is not None:
         checkout = Path(provider_root).expanduser().resolve()
         checks["provider_root"] = {
@@ -109,23 +124,27 @@ def run_provider_doctor(
 
     probe = {"ok": False, "stdout": "", "stderr": "conda executable was not found"}
     payload: dict[str, Any] = {}
-    if conda is not None:
+    if exact_python is not None and exact_python.is_file():
+        probe = _run([str(exact_python), "-c", _probe_code(registration.probe_packages)], timeout=90)
+    elif conda is not None:
         probe = _run(
             [conda, "run", "-n", selected_environment, "python", "-c", _probe_code(registration.probe_packages)],
             timeout=90,
         )
-        if probe["ok"]:
-            for line in reversed(probe["stdout"].splitlines()):
-                line = line.strip()
-                if line.startswith("{"):
-                    try:
-                        payload = json.loads(line)
-                        break
-                    except json.JSONDecodeError:
-                        continue
+    if probe["ok"]:
+        for line in reversed(probe["stdout"].splitlines()):
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    payload = json.loads(line)
+                    break
+                except json.JSONDecodeError:
+                    continue
 
     checks["environment"] = {
-        "ok": bool(probe["ok"]), "value": selected_environment, "required": True
+        "ok": bool(probe["ok"]),
+        "value": str(exact_python) if exact_python else selected_environment,
+        "required": True,
     }
     checks["python"] = {
         "ok": bool(payload.get("python")), "value": payload.get("python"), "required": True
@@ -145,6 +164,8 @@ def run_provider_doctor(
         "schema_version": "rlw.provider_doctor/v1",
         "provider": provider,
         "environment": selected_environment,
+        "conda_prefix": str(Path(conda_prefix).expanduser().resolve()) if conda_prefix else None,
+        "python_executable": str(exact_python) if exact_python else None,
         "provider_root": str(Path(provider_root).expanduser().resolve()) if provider_root else None,
         "checks": checks,
         "ready": all(item["ok"] for item in checks.values() if item["required"]),

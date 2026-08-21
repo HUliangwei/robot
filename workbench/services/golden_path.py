@@ -844,6 +844,183 @@ class GoldenPathService:
             "discovered": discovered,
         }
 
+    def evaluate(self, run_id: str) -> dict[str, Any]:
+        """Execute a Provider-native evaluation as a durable job on an existing Run."""
+        run_dir = self.root / "runs" / run_id
+        manifest_path = run_dir / "manifest.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"run {run_id!r} does not exist")
+        manifest = read_json(manifest_path)
+        provider_name = str((manifest.get("provider") or {}).get("name") or "lerobot")
+        registration = get_registration(provider_name)
+        output_dir = self.root / str((manifest.get("paths") or {}).get("training_output"))
+        checkpoints: set[Path] = set()
+        for pattern in registration.checkpoint_patterns:
+            checkpoints.update(output_dir.glob(pattern))
+        usable = sorted(path for path in checkpoints if path.exists())
+        if not usable:
+            raise ValueError(f"run {run_id} has no checkpoint to evaluate")
+        checkpoint = usable[-1]
+
+        resolved = manifest.get("resolved_config") or {}
+        evaluation = dict(resolved.get("evaluation") or {})
+        if provider_name != "lerobot" and not evaluation:
+            raise ValueError(
+                f"Provider {provider_name!r} requires an explicit provider-native evaluation config"
+            )
+        evaluation_dir = output_dir / "evaluation"
+        evaluation_dir.mkdir(parents=True, exist_ok=True)
+        eval_config = {
+            **evaluation,
+            "policy_path": str(checkpoint.resolve()),
+            "output_dir": str(evaluation_dir.resolve()),
+            "env_type": evaluation.get("env_type", "pusht"),
+            "n_episodes": int(evaluation.get("n_episodes", 1)),
+            "batch_size": int(evaluation.get("batch_size", 1)),
+        }
+        runtime = manifest.get("provider_runtime") or {}
+        command = get_provider(provider_name).build_command(
+            "evaluate",
+            eval_config,
+            provider_env=runtime.get("conda_env") if not runtime.get("python_executable") else None,
+            python_executable=runtime.get("python_executable"),
+            cwd=str(runtime.get("provider_root") or self.root),
+        )
+
+        job_id = new_id("job")
+        job_dir = run_dir / "jobs" / "evaluate"
+        job_path = job_dir / "job.json"
+        command_path = job_dir / "resolved_command.json"
+        created_at = _utc_now()
+        job = {
+            "schema_version": "rlw.job/v1",
+            "job_id": job_id,
+            "run_id": run_id,
+            "kind": "evaluate",
+            "state": "RUNNING",
+            "depends_on": [manifest.get("job", {}).get("job_id")],
+            "created_at": created_at,
+            "started_at": created_at,
+            "attempt_ids": [],
+        }
+        atomic_write_json(
+            command_path,
+            {
+                "schema_version": command.schema_version,
+                "argv": list(command.normalized_argv()),
+                "cwd": command.cwd,
+                "env": dict(command.env),
+            },
+        )
+        atomic_write_json(job_path, job)
+        events = LifecycleEventWriter(self.root, run_id)
+        events.emit(
+            "JobCreated", job_id=job_id, occurred_at=created_at, category="lifecycle",
+            payload={"kind": "evaluate", "state": "READY"},
+            dedupe_key=f"JobCreated:{job_id}",
+        )
+        attempt_id = new_id("attempt")
+        events.emit(
+            "AttemptStarted", job_id=job_id, attempt_id=attempt_id,
+            occurred_at=created_at, category="execution", payload={"state": "RUNNING"},
+            dedupe_key=f"AttemptStarted:{attempt_id}",
+        )
+        result = LocalExecutor(self.root).run(job_id, command, attempt_id=attempt_id)
+        ended_at = _utc_now()
+        attempt = read_json(result.attempt_path)
+        attempt.update(
+            {
+                "stdout_path": Path(result.stdout_path).relative_to(self.root).as_posix(),
+                "stderr_path": Path(result.stderr_path).relative_to(self.root).as_posix(),
+                "runtime_record_path": Path(result.attempt_path).relative_to(self.root).as_posix(),
+            }
+        )
+        if result.state == "FAILED":
+            attempt["error"] = {
+                "category": "EvaluationError",
+                "reason": f"Evaluation command exited with code {result.exit_code}.",
+                "retriable": False,
+                "recommended_action": "Inspect evaluation stdout/stderr and Provider inputs.",
+            }
+        attempt_path = job_dir / "attempts" / f"{attempt_id}.json"
+        atomic_write_json(attempt_path, attempt)
+        job.update(
+            {
+                "state": result.state,
+                "ended_at": ended_at,
+                "last_attempt_id": attempt_id,
+                "attempt_ids": [attempt_id],
+            }
+        )
+        atomic_write_json(job_path, job)
+        manifest.setdefault("jobs", {})["evaluate"] = {
+            "job_id": job_id,
+            "kind": "evaluate",
+            "state": result.state,
+            "record": job_path.relative_to(self.root).as_posix(),
+        }
+        manifest["last_attempt"] = {
+            "attempt_id": attempt_id,
+            "job_kind": "evaluate",
+            "state": result.state,
+            "exit_code": result.exit_code,
+            "stdout_path": attempt["stdout_path"],
+            "stderr_path": attempt["stderr_path"],
+            "attempt_path": attempt_path.relative_to(self.root).as_posix(),
+        }
+        atomic_write_json(manifest_path, manifest)
+
+        if result.state == "SUCCEEDED":
+            info_path = evaluation_dir / "eval_info.json"
+            if info_path.is_file():
+                info = read_json(info_path)
+                aggregated = info.get("aggregated") or info.get("overall") or {}
+                episodes = int(aggregated.get("n_episodes") or eval_config["n_episodes"])
+                metrics: dict[str, Any] = {}
+                if isinstance(aggregated.get("pc_success"), (int, float)):
+                    metrics["success_rate"] = {
+                        "value": float(aggregated["pc_success"]) / 100.0,
+                        "unit": "ratio", "direction": "higher_is_better",
+                        "aggregation": "mean", "scope": "task", "episodes": episodes,
+                        "definition_version": f"{eval_config['env_type']}/v1",
+                    }
+                for name in ("avg_sum_reward", "avg_max_reward", "eval_s", "eval_ep_s"):
+                    value = aggregated.get(name)
+                    if isinstance(value, (int, float)):
+                        metrics[name] = {
+                            "value": float(value),
+                            "direction": "higher_is_better" if "reward" in name else "lower_is_better",
+                            "aggregation": "mean", "scope": "task", "episodes": episodes,
+                            "definition_version": f"{eval_config['env_type']}/v1",
+                        }
+                atomic_write_json(evaluation_dir / "metrics.json", metrics)
+            events.emit(
+                "JobCompleted", job_id=job_id, attempt_id=attempt_id,
+                occurred_at=ended_at, category="lifecycle",
+                payload={"state": result.state, "exit_code": result.exit_code},
+                dedupe_key=f"JobCompleted:{job_id}:{attempt_id}",
+            )
+        else:
+            events.emit(
+                "AttemptFailed", job_id=job_id, attempt_id=attempt_id,
+                occurred_at=ended_at, category="execution",
+                payload={"exit_code": result.exit_code, "error": attempt.get("error")},
+                dedupe_key=f"AttemptFailed:{attempt_id}",
+            )
+        discovered = self.discover(run_id)
+        self.catalog.rebuild(self.root)
+        return {
+            "schema_version": "rlw.run_evaluate/v1",
+            "run_id": run_id,
+            "job_kind": "evaluate",
+            "job_id": job_id,
+            "attempt_id": attempt_id,
+            "state": result.state,
+            "exit_code": result.exit_code,
+            "checkpoint": str(checkpoint),
+            "discovered": discovered,
+        }
+
     def discover(self, run_id: str) -> dict[str, Any]:
         run_dir = self.root / "runs" / run_id
         manifest_path = run_dir / "manifest.json"

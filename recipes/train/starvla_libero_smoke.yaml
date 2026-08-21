@@ -1,0 +1,21 @@
+schema_version: rlw.recipe/v1
+name: starvla_libero_smoke
+question: Can the current stable StarVLA LIBERO stack be selected and preflighted by RLW?
+kind: train
+provider: starvla
+framework: qwen_groot
+native_config: examples/LIBERO/train_files/starvla_cotrain_libero.yaml
+dataset_id: libero_provider_native
+accelerate_config: starVLA/config/deepseeds/deepspeed_zero2.yaml
+num_processes: 1
+native_overrides:
+  trainer.max_train_steps: 1
+  trainer.num_warmup_steps: 0
+  trainer.save_interval: 1
+  framework.qwenvl.attn_implementation: sdpa
+  trainer.logging_frequency: 1
+  is_debug: true
+notes: >-
+  Provider-native smoke selection for the current stable StarVLA branch. RLW
+  overrides distributed process count and training length but does not pretend
+  that StarVLA owns PushT or synthesize missing LIBERO/model assets.

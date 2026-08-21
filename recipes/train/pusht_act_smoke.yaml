@@ -1,0 +1,24 @@
+schema_version: rlw.recipe/v1
+name: pusht_act_smoke
+question: Can RLW complete a real minimal PushT train and closed-loop evaluation?
+kind: train
+provider: lerobot
+policy_type: act
+dataset_repo_id: lerobot/pusht
+native_overrides:
+  steps: 2
+  batch_size: 1
+  num_workers: 0
+  save_freq: 1
+  save_checkpoint: true
+  env_eval_freq: 0
+  eval_steps: 0
+  policy.push_to_hub: false
+  wandb.enable: false
+evaluation:
+  env_type: pusht
+  n_episodes: 1
+  batch_size: 1
+notes: >-
+  R18 real smoke profile. It performs optimizer updates, saves a native
+  checkpoint, and evaluates that checkpoint in one closed-loop PushT episode.

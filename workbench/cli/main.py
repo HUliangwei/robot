@@ -34,7 +34,9 @@ from workbench.services.test_runner import run_pytest
 from workbench.storage.catalog import Catalog
 _WORKFLOW_RECIPES = {
     "pusht-act": "recipes/train/pusht_act.yaml",
+    "pusht-act-smoke": "recipes/train/pusht_act_smoke.yaml",
     "starvla-qwenoft": "recipes/train/starvla_qwenoft.yaml",
+    "starvla-libero-smoke": "recipes/train/starvla_libero_smoke.yaml",
 }
 
 from workbench.storage.manifests import read_json
@@ -217,6 +219,8 @@ Core workflow:
         help="provider name, or legacy LeRobot environment name",
     )
     provider_doctor.add_argument("--environment", help="isolated Provider environment")
+    provider_doctor.add_argument("--conda-prefix", help="exact Provider Conda prefix")
+    provider_doctor.add_argument("--python-executable", help="exact Provider Python")
     provider_doctor.add_argument("--provider-root", help="optional local Provider checkout")
     _add_output_flags(provider_doctor)
     provider_command = provider_sub.add_parser(
@@ -226,6 +230,7 @@ Core workflow:
     provider_command.add_argument("provider")
     provider_command.add_argument("--recipe", required=True)
     provider_command.add_argument("--environment", dest="provider_env")
+    provider_command.add_argument("--conda-prefix")
     provider_command.add_argument("--python-executable")
     provider_command.add_argument("--provider-root")
     _add_output_flags(provider_command)
@@ -234,6 +239,7 @@ Core workflow:
     )
     provider_configure.add_argument("provider")
     provider_configure.add_argument("--environment")
+    provider_configure.add_argument("--conda-prefix")
     provider_configure.add_argument("--python-executable")
     provider_configure.add_argument("--provider-root")
     _add_output_flags(provider_configure)
@@ -242,6 +248,7 @@ Core workflow:
     )
     provider_install.add_argument("provider")
     provider_install.add_argument("--environment")
+    provider_install.add_argument("--conda-prefix")
     provider_install.add_argument("--provider-root")
     provider_install.add_argument("--repository")
     provider_install.add_argument("--revision")
@@ -276,6 +283,7 @@ Core workflow:
         ("inspect", "inspect lifecycle, attempts, logs, artifacts, and metrics"),
         ("preflight", "validate Run execution preconditions"),
         ("execute", "execute the prepared train job"),
+        ("evaluate", "evaluate the produced checkpoint through its Provider"),
         ("reconcile", "discover and register produced artifacts/metrics"),
         ("discover", "compatibility synonym for reconcile"),
     ):
@@ -450,14 +458,20 @@ def main(argv: list[str] | None = None) -> int:
                     resolve_provider_runtime(
                         root, args.target,
                         environment=args.environment,
+                        conda_prefix=args.conda_prefix,
+                        python_executable=args.python_executable,
                         provider_root=args.provider_root,
                     )
                     if args.target in registered
-                    else {"conda_env": args.environment, "provider_root": args.provider_root}
+                    else {"conda_env": args.environment, "conda_prefix": args.conda_prefix,
+                          "python_executable": args.python_executable,
+                          "provider_root": args.provider_root}
                 )
                 result = run_provider_doctor(
                     args.target,
                     environment=runtime["conda_env"],
+                    conda_prefix=runtime.get("conda_prefix"),
+                    python_executable=(runtime.get("python_executable") if not runtime.get("conda_prefix") else None),
                     provider_root=runtime["provider_root"],
                 )
             except ValueError as exc:
@@ -476,6 +490,7 @@ def main(argv: list[str] | None = None) -> int:
                     root,
                     args.provider,
                     environment=args.environment,
+                    conda_prefix=args.conda_prefix,
                     python_executable=args.python_executable,
                     provider_root=args.provider_root,
                 )
@@ -490,6 +505,7 @@ def main(argv: list[str] | None = None) -> int:
                     root,
                     args.provider,
                     environment=args.environment,
+                    conda_prefix=args.conda_prefix,
                     provider_root=args.provider_root,
                     repository=args.repository,
                     revision=args.revision,
@@ -515,13 +531,21 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1 if result.get("status") == "FAILED" else 0
         try:
+            selected = resolve_provider_runtime(
+                root,
+                args.provider,
+                environment=args.provider_env,
+                conda_prefix=args.conda_prefix,
+                python_executable=args.python_executable,
+                provider_root=args.provider_root,
+            )
             result = preview_provider_command(
                 root,
                 args.provider,
                 args.recipe,
-                provider_env=args.provider_env,
-                python_executable=args.python_executable,
-                provider_root=args.provider_root,
+                provider_env=selected["conda_env"] if not selected.get("python_executable") else None,
+                python_executable=selected.get("python_executable"),
+                provider_root=selected["provider_root"],
             )
         except (FileNotFoundError, ValueError) as exc:
             _emit(
@@ -637,6 +661,19 @@ def main(argv: list[str] | None = None) -> int:
                 next_steps=[f"rlw run reconcile {args.run_id}", f"rlw run show {args.run_id}"],
             )
             return 0
+        if command == "evaluate":
+            result = service.evaluate(args.run_id)
+            _emit(
+                "Run Evaluate",
+                "Evaluate the produced checkpoint through the selected Provider.",
+                result,
+                json_mode=json_mode,
+                next_steps=[
+                    f"rlw run reconcile {args.run_id}",
+                    f"rlw run inspect {args.run_id}",
+                ],
+            )
+            return 0 if result["state"] == "SUCCEEDED" else 1
         result = service.discover(args.run_id)
         _emit(
             "Run Reconcile",

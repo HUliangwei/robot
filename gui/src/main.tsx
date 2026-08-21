@@ -153,7 +153,7 @@ function App() {
     setBusyProvider(provider.name)
     try {
       const report = await getJson<ProviderDoctor>(
-        buildProviderDoctorPath(provider.name, provider.default_environment),
+        buildProviderDoctorPath(provider.name),
       )
       setProviderDoctors(current => ({ ...current, [provider.name]: report }))
       setError('')
@@ -226,6 +226,21 @@ function App() {
       await inspectRun(runId, false)
     } catch (e) {
       setError(`执行请求失败 Execute request failed: ${String(e)}`)
+    } finally {
+      setActionRun('')
+    }
+  }
+
+  const evaluateRun = async (runId: string) => {
+    if (!window.confirm(`确认评估本地 Run？\nConfirm local evaluation:\n${runId}`)) return
+    setActionRun(runId)
+    try {
+      await postJson(buildRunActionPath(runId, 'evaluate'), { confirmation: runId })
+      setAcceptedExecution({ runId, until: Date.now() + 90_000 })
+      setMessage(`评估请求已接收 Evaluation accepted: ${runId}`)
+      await inspectRun(runId, false)
+    } catch (e) {
+      setError(`评估请求失败 Evaluate request failed: ${String(e)}`)
     } finally {
       setActionRun('')
     }
@@ -319,6 +334,7 @@ function App() {
           onInspect={inspectRun}
           onExecute={executeRun}
           onReconcile={reconcileRun}
+          onEvaluate={evaluateRun}
         />
         {message && <p className="actionMessage">{message}</p>}
         {observability && <RunObservabilityPanel detail={observability} />}
@@ -442,7 +458,7 @@ function Card({ label, value }: { label: string; value: React.ReactNode }) {
   return <div className="card"><div className="label">{label}</div><div className="value">{value}</div></div>
 }
 
-function RunRecords({ items, preflight, busyRun, actionRun, inspectingRun, onPreflight, onInspect, onExecute, onReconcile }: { items: any[]; preflight: Record<string, Preflight>; busyRun: string; actionRun: string; inspectingRun: string; onPreflight: (runId: string) => void; onInspect: (runId: string) => void; onExecute: (runId: string) => void; onReconcile: (runId: string) => void }) {
+function RunRecords({ items, preflight, busyRun, actionRun, inspectingRun, onPreflight, onInspect, onExecute, onEvaluate, onReconcile }: { items: any[]; preflight: Record<string, Preflight>; busyRun: string; actionRun: string; inspectingRun: string; onPreflight: (runId: string) => void; onInspect: (runId: string) => void; onExecute: (runId: string) => void; onEvaluate: (runId: string) => void; onReconcile: (runId: string) => void }) {
   return <section className="panel">
     <div className="panelTitle">标准运行 Canonical Runs</div>
     {items.length === 0 ? <p className="muted">暂无运行 No runs yet.</p> : <div className="records">
@@ -457,6 +473,7 @@ function RunRecords({ items, preflight, busyRun, actionRun, inspectingRun, onPre
             <button className="secondary" onClick={() => onInspect(run.run_id)} disabled={inspectingRun === run.run_id}>{inspectingRun === run.run_id ? '加载中 Loading…' : '查看详情 Inspect'}</button>
             <button className="primary" onClick={() => onExecute(run.run_id)} disabled={!report?.ok || actionRun === run.run_id}>{actionRun === run.run_id ? '处理中 Working…' : '确认执行 Execute'}</button>
             <button className="secondary" onClick={() => onReconcile(run.run_id)} disabled={actionRun === run.run_id}>重对账 Reconcile</button>
+            <button className="secondary" onClick={() => onEvaluate(run.run_id)} disabled={run.status !== 'SUCCEEDED' || actionRun === run.run_id}>闭环评估 Evaluate</button>
           </div>
           {report && <PreflightPanel report={report} />}
         </div>

@@ -13,9 +13,15 @@ _FRAMEWORKS = {
         "backbone": "Qwen-VL",
         "action_head": "OFT",
         "fusion": "action-token hidden-state regression",
+    },
+    "qwen_groot": {
+        "id": "qwen_groot",
+        "native_name": "QwenGR00T",
+        "backbone": "Qwen3-VL",
+        "action_head": "GR00T flow-matching",
+        "fusion": "vision-language-action co-training",
     }
 }
-
 
 def _stringify(value: Any) -> str:
     if isinstance(value, bool):

@@ -102,6 +102,7 @@ rlw catalog rebuild
 rlw system overview
 rlw run preflight RUN_ID
 rlw run execute RUN_ID
+rlw run evaluate RUN_ID
 rlw run reconcile RUN_ID
 rlw run inspect RUN_ID
 rlw evaluation compare RUN_A RUN_B
@@ -118,11 +119,19 @@ rlw provider doctor lerobot
 rlw provider doctor starvla
 ```
 
+Register an existing project-local environment by exact prefix. Doctor,
+preview, prepare, execute, and evaluate all reuse its exact interpreter:
+
+```powershell
+rlw provider configure lerobot --conda-prefix D:\Desktop\robot\envs\lerobot-win
+rlw provider doctor lerobot
+```
+
 If StarVLA is checked out elsewhere on this machine, include its root so RLW
 also validates the expected upstream entrypoint and Accelerate configuration:
 
 ```powershell
-rlw provider configure starvla --environment starvla --provider-root D:\path\to\starVLA
+rlw provider configure starvla --conda-prefix D:\path\to\env --provider-root D:\path\to\starVLA
 rlw provider doctor starvla
 ```
 
@@ -147,34 +156,55 @@ rlw provider install starvla --confirm starvla
 rlw provider doctor starvla
 ```
 
-The managed plan uses an isolated Python 3.10 Conda environment and registers
-the runtime only after every required step succeeds. FlashAttention remains an
-explicit compatibility item because its build must match CUDA and PyTorch; RLW
-does not silently mutate host drivers or CUDA.
+The managed plan uses `D:\Desktop\robot\envs\starvla`, bootstraps the
+CUDA-compatible Torch/torchvision pair before installing requirements, and
+uses no-build-isolation for packages such as DeepSpeed that inspect Torch.
+It registers the runtime only after every required step succeeds.
+FlashAttention remains explicit because its build must match CUDA and PyTorch;
+RLW does not silently mutate host drivers or CUDA.
 
-## Prepare and run StarVLA
+## Real smoke workflows
 
-After Provider Doctor reports `READY`, use the canonical workflow:
+RLW recipes select the Provider while preserving native task semantics. PushT
+remains a LeRobot task; the current stable StarVLA LIBERO stack uses its own
+QwenGR00T config. Users operate both through the same root-scoped lifecycle.
+
+Run two real PushT ACT optimizer steps and one closed-loop evaluation episode:
 
 ```powershell
-rlw run prepare starvla-qwenoft --dataset-revision REVISION
+rlw run prepare pusht-act-smoke
+rlw run preflight RUN_ID
+rlw run execute RUN_ID
+rlw run evaluate RUN_ID
+rlw run reconcile RUN_ID
+rlw run inspect RUN_ID
+```
+
+The smoke recipe uses the immutable cached `lerobot/pusht` revision, saves
+native LeRobot checkpoints, then calls native `lerobot_eval` with
+`env.type=pusht`. Evaluation is a separate durable Job and ExecutionAttempt;
+video, native `eval_info.json`, normalized metrics, Artifacts, and MetricRecords
+are reconciled idempotently.
+
+After StarVLA Doctor reports `READY`, select its current stable LIBERO stack:
+
+```powershell
+rlw run prepare starvla-libero-smoke --dataset-revision STARVLA_CHECKOUT_COMMIT
 rlw run preflight RUN_ID
 rlw run execute RUN_ID
 rlw run inspect RUN_ID
 rlw run reconcile RUN_ID
 ```
 
-`prepare` resolves the saved runtime, native config, portable lineage, and exact
-command without starting training. Reconcile discovers StarVLA checkpoints and
-registers provider-attributed Artifact records. The GUI overview exposes both
-`pusht-act` and `starvla-qwenoft` through the same API.
+The StarVLA recipe limits the native trainer to one step, but still requires
+real Provider-native model and LIBERO assets. RLW reports missing assets instead
+of substituting PushT or a fixture.
 
-The local Run flow is **Preflight → Execute → Inspect → Reconcile**. `execute`
-repeats the required preflight checks before starting the Provider process;
-`reconcile` safely re-discovers generated Artifact and Metric records and may
-be repeated. The Runs page exposes the same actions. GUI execution stays locked
-until its Preflight result passes, then requires confirmation of the exact Run
-ID. CLI execution asks for the same explicit Run target in the command.
+The local flow is **Preflight → Execute → Evaluate → Inspect → Reconcile** when
+the selected Provider/recipe supports evaluation. `execute` repeats required
+preflight checks before starting the Provider process; `reconcile` safely
+re-discovers generated Artifact and Metric records. The Runs page exposes the
+same actions and requires explicit confirmation.
 
 `rlw run inspect RUN_ID` and the GUI's **查看详情 Inspect** action use the
 same observability service. They show Run lifecycle events, durable Jobs and
