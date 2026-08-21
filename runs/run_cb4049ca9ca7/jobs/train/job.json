@@ -1,0 +1,9 @@
+{
+  "command": "runs/run_cb4049ca9ca7/resolved_command.json",
+  "created_at": "2026-08-21T19:34:59.423780+00:00",
+  "job_id": "job_ad62c83b1ae4",
+  "kind": "train",
+  "run_id": "run_cb4049ca9ca7",
+  "schema_version": "rlw.job/v1",
+  "state": "READY"
+}

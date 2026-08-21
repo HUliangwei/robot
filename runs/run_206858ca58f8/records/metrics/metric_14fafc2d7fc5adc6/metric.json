@@ -1,0 +1,14 @@
+{
+  "aggregation": "mean",
+  "definition_version": "pusht/v1",
+  "direction": "lower_is_better",
+  "episodes": 1,
+  "metric_id": "metric_14fafc2d7fc5adc6",
+  "name": "eval_ep_s",
+  "namespace": "lerobot",
+  "run_id": "run_206858ca58f8",
+  "schema_version": "rlw.metric_record/v1",
+  "scope": "task",
+  "source": "runs/run_206858ca58f8/artifacts/training/evaluation/metrics.json",
+  "value": 34.17597413063049
+}

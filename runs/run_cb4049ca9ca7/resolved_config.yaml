@@ -1,0 +1,22 @@
+schema_version: rlw.resolved_config/v1
+run_id: run_cb4049ca9ca7
+trial_id: trial_8dbfeaf4e4dc
+experiment_id: experiment_429a16c49f89
+recipe: recipes/train/pusht_act.yaml
+provider: lerobot
+dataset_revision: b1c3ecbae7f244acc039a3dbc255a00dad1372b9
+provider_runtime:
+  conda_env: null
+  python_executable: D:\Desktop\robot\envs\lerobot-win\python.exe
+git_commit: 08301c42c7171269d934e43d8b7d873c217e4c50
+native_overrides:
+  steps: 25000
+  batch_size: 8
+  save_freq: 5000
+  save_checkpoint: true
+  env_eval_freq: 0
+  eval_steps: 0
+  wandb.enable: false
+  output_dir: runs/run_cb4049ca9ca7/artifacts/training
+policy_type: act
+dataset_repo_id: lerobot/pusht

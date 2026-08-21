@@ -1,0 +1,20 @@
+schema_version: rlw.run_spec/v1
+experiment:
+  name: pusht_act_baseline
+  question: Local Provider training baseline
+dataset:
+  repo_id: lerobot/pusht
+  revision: b1c3ecbae7f244acc039a3dbc255a00dad1372b9
+policy:
+  provider: lerobot
+  architecture: act
+training:
+  recipe: recipes/train/pusht_act.yaml
+  native_overrides:
+    steps: 25000
+    batch_size: 8
+    save_freq: 5000
+    save_checkpoint: true
+    env_eval_freq: 0
+    eval_steps: 0
+    wandb.enable: false

@@ -1,0 +1,15 @@
+{
+  "aggregation": "mean",
+  "definition_version": "pusht/v1",
+  "direction": "higher_is_better",
+  "episodes": 1,
+  "metric_id": "metric_ee4e092e87b34bdf",
+  "name": "success_rate",
+  "namespace": "lerobot",
+  "run_id": "run_206858ca58f8",
+  "schema_version": "rlw.metric_record/v1",
+  "scope": "task",
+  "source": "runs/run_206858ca58f8/artifacts/training/evaluation/metrics.json",
+  "unit": "ratio",
+  "value": 0.0
+}

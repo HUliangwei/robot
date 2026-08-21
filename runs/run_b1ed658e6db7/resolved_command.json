@@ -1,0 +1,33 @@
+{
+  "argv": [
+    "D:\\Desktop\\robot\\envs\\starvla\\python.exe",
+    "-m",
+    "accelerate.commands.launch",
+    "--config_file",
+    "starVLA/config/deepseeds/deepspeed_zero2.yaml",
+    "--num_processes",
+    "1",
+    "starVLA/training/train_starvla.py",
+    "--config_yaml",
+    "examples/LIBERO/train_files/starvla_cotrain_libero.yaml",
+    "--framework.name",
+    "QwenGR00T",
+    "--framework.qwenvl.attn_implementation",
+    "sdpa",
+    "--is_debug",
+    "true",
+    "--run_root_dir",
+    "D:\\Desktop\\robot\\runs\\run_b1ed658e6db7\\artifacts\\training",
+    "--trainer.logging_frequency",
+    "1",
+    "--trainer.max_train_steps",
+    "1",
+    "--trainer.num_warmup_steps",
+    "0",
+    "--trainer.save_interval",
+    "1"
+  ],
+  "cwd": "D:\\Desktop\\robot\\.rlw\\providers\\starvla\\source",
+  "env": {},
+  "schema_version": "rlw.command_spec/v1"
+}

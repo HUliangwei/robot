@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+    "-m",
+    "lerobot.scripts.lerobot_train",
+    "--policy.type=act",
+    "--dataset.repo_id=lerobot/pusht",
+    "--dataset.revision=b1c3ecbae7f244acc039a3dbc255a00dad1372b9",
+    "--batch_size=8",
+    "--env_eval_freq=0",
+    "--eval_steps=0",
+    "--output_dir=runs/run_cb4049ca9ca7/artifacts/training",
+    "--save_checkpoint=true",
+    "--save_freq=5000",
+    "--steps=25000",
+    "--wandb.enable=false"
+  ],
+  "cwd": "D:\\Desktop\\robot",
+  "env": {},
+  "schema_version": "rlw.command_spec/v1"
+}

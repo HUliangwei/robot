@@ -1,0 +1,106 @@
+{
+  "created_at": "2026-08-21T16:25:47.045995+00:00",
+  "experiment": {
+    "experiment_id": "experiment_210beb3b1421",
+    "name": "starvla_libero_smoke",
+    "question": "Can the current stable StarVLA LIBERO stack be selected and preflighted by RLW?",
+    "schema_version": "rlw.experiment/v1"
+  },
+  "git_commit": "b183d741a4633dd135d8fc4e734e7fdea825f5b2",
+  "git_state": {
+    "commit": "b183d741a4633dd135d8fc4e734e7fdea825f5b2",
+    "schema_version": "rlw.git_state/v1",
+    "source_tree_clean_at_prepare": true
+  },
+  "job": {
+    "command": "runs/run_b1ed658e6db7/resolved_command.json",
+    "created_at": "2026-08-21T16:25:47.045995+00:00",
+    "job_id": "job_d210ee837c04",
+    "kind": "train",
+    "run_id": "run_b1ed658e6db7",
+    "schema_version": "rlw.job/v1",
+    "state": "READY"
+  },
+  "lineage": {
+    "dataset": {
+      "dataset_id": "libero_provider_native",
+      "manifest": "datasets/libero_provider_native/3422b9f2387b6f682cf02802904a77b23ab13afd/dataset.yaml",
+      "revision": "3422b9f2387b6f682cf02802904a77b23ab13afd"
+    },
+    "parents": [],
+    "run_id": "run_b1ed658e6db7",
+    "schema_version": "rlw.lineage/v1"
+  },
+  "paths": {
+    "command": "runs/run_b1ed658e6db7/resolved_command.json",
+    "job_record": "runs/run_b1ed658e6db7/jobs/train/job.json",
+    "lineage": "runs/run_b1ed658e6db7/lineage.json",
+    "resolved_config": "runs/run_b1ed658e6db7/resolved_config.yaml",
+    "run_dir": "runs/run_b1ed658e6db7",
+    "run_spec": "runs/run_b1ed658e6db7/run.yaml",
+    "training_output": "runs/run_b1ed658e6db7/artifacts/training"
+  },
+  "provider": {
+    "adapter_version": "0.1",
+    "capabilities": [
+      "dataset",
+      "train",
+      "architecture_research",
+      "eval"
+    ],
+    "name": "starvla",
+    "schema_version": "rlw.provider_spec/v1",
+    "version": null
+  },
+  "provider_runtime": {
+    "conda_env": null,
+    "conda_prefix": "D:\\Desktop\\robot\\envs\\starvla",
+    "provider": "starvla",
+    "provider_root": "D:\\Desktop\\robot\\.rlw\\providers\\starvla\\source",
+    "python_executable": "D:\\Desktop\\robot\\envs\\starvla\\python.exe",
+    "schema_version": "rlw.provider_runtime_resolution/v1",
+    "source": "configured"
+  },
+  "resolved_config": {
+    "accelerate_config": "starVLA/config/deepseeds/deepspeed_zero2.yaml",
+    "dataset_id": "libero_provider_native",
+    "dataset_revision": "3422b9f2387b6f682cf02802904a77b23ab13afd",
+    "entrypoint": "starVLA/training/train_starvla.py",
+    "experiment_id": "experiment_210beb3b1421",
+    "framework": "qwen_groot",
+    "git_commit": "b183d741a4633dd135d8fc4e734e7fdea825f5b2",
+    "native_config": "examples/LIBERO/train_files/starvla_cotrain_libero.yaml",
+    "native_framework": "QwenGR00T",
+    "native_overrides": {
+      "framework.qwenvl.attn_implementation": "sdpa",
+      "is_debug": true,
+      "run_root_dir": "runs/run_b1ed658e6db7/artifacts/training",
+      "trainer.logging_frequency": 1,
+      "trainer.max_train_steps": 1,
+      "trainer.num_warmup_steps": 0,
+      "trainer.save_interval": 1
+    },
+    "num_processes": 1,
+    "provider": "starvla",
+    "provider_runtime": {
+      "conda_env": null,
+      "python_executable": "D:\\Desktop\\robot\\envs\\starvla\\python.exe"
+    },
+    "recipe": "recipes/train/starvla_libero_smoke.yaml",
+    "run_id": "run_b1ed658e6db7",
+    "schema_version": "rlw.resolved_config/v1",
+    "trial_id": "trial_8a59b3467e1e"
+  },
+  "run_id": "run_b1ed658e6db7",
+  "schema_version": "rlw.run_manifest/v1",
+  "status": "READY",
+  "trial": {
+    "experiment_id": "experiment_210beb3b1421",
+    "resolved_variables": {
+      "dataset_revision": "3422b9f2387b6f682cf02802904a77b23ab13afd",
+      "framework": "qwen_groot"
+    },
+    "schema_version": "rlw.trial/v1",
+    "trial_id": "trial_8a59b3467e1e"
+  }
+}

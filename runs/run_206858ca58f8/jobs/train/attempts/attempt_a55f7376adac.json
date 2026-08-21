@@ -1,0 +1,31 @@
+{
+  "argv": [
+    "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+    "-m",
+    "lerobot.scripts.lerobot_train",
+    "--policy.type=act",
+    "--dataset.repo_id=lerobot/pusht",
+    "--dataset.revision=b1c3ecbae7f244acc039a3dbc255a00dad1372b9",
+    "--batch_size=1",
+    "--env_eval_freq=0",
+    "--eval_steps=0",
+    "--num_workers=0",
+    "--output_dir=runs/run_206858ca58f8/artifacts/training",
+    "--policy.push_to_hub=false",
+    "--save_checkpoint=true",
+    "--save_freq=1",
+    "--steps=2",
+    "--wandb.enable=false"
+  ],
+  "attempt_id": "attempt_a55f7376adac",
+  "cwd": "D:\\Desktop\\robot",
+  "ended_at": "2026-08-21T14:43:40.927678+00:00",
+  "exit_code": 0,
+  "job_id": "job_7719e6fc5f5e",
+  "runtime_record_path": ".rlw/state/jobs/job_7719e6fc5f5e/attempt_a55f7376adac/attempt.json",
+  "schema_version": "rlw.execution_attempt/v1",
+  "started_at": "2026-08-21T14:42:19.751671+00:00",
+  "state": "SUCCEEDED",
+  "stderr_path": ".rlw/state/jobs/job_7719e6fc5f5e/attempt_a55f7376adac/stderr.log",
+  "stdout_path": ".rlw/state/jobs/job_7719e6fc5f5e/attempt_a55f7376adac/stdout.log"
+}

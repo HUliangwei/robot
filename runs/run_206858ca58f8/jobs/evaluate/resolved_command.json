@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+    "-m",
+    "lerobot.scripts.lerobot_eval",
+    "--policy.path=D:\\Desktop\\robot\\runs\\run_206858ca58f8\\artifacts\\training\\checkpoints\\000002\\pretrained_model",
+    "--env.type=pusht",
+    "--eval.n_episodes=1",
+    "--eval.batch_size=1",
+    "--output_dir=D:\\Desktop\\robot\\runs\\run_206858ca58f8\\artifacts\\training\\evaluation"
+  ],
+  "cwd": "D:\\Desktop\\robot",
+  "env": {},
+  "schema_version": "rlw.command_spec/v1"
+}

@@ -1,0 +1,37 @@
+{
+  "argv": [
+    "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+    "-m",
+    "lerobot.scripts.lerobot_train",
+    "--policy.type=act",
+    "--dataset.repo_id=lerobot/pusht",
+    "--dataset.revision=b1c3ecbae7f244acc039a3dbc255a00dad1372b9",
+    "--batch_size=1",
+    "--env_eval_freq=0",
+    "--eval_steps=0",
+    "--num_workers=0",
+    "--output_dir=runs/run_b433f3e57689/artifacts/training",
+    "--policy.push_to_hub=false",
+    "--save_checkpoint=true",
+    "--save_freq=1",
+    "--steps=2",
+    "--wandb.enable=false"
+  ],
+  "attempt_id": "attempt_a35a5ba808f7",
+  "cwd": "D:\\Desktop\\robot",
+  "ended_at": "2026-08-21T14:33:11.631714+00:00",
+  "error": {
+    "category": "ExecutionError",
+    "reason": "Command exited with code 1.",
+    "recommended_action": "Inspect stdout and stderr, correct the command or provider input, then retry.",
+    "retriable": false
+  },
+  "exit_code": 1,
+  "job_id": "job_6b3ea65dd3c5",
+  "runtime_record_path": ".rlw/state/jobs/job_6b3ea65dd3c5/attempt_a35a5ba808f7/attempt.json",
+  "schema_version": "rlw.execution_attempt/v1",
+  "started_at": "2026-08-21T14:31:50.780252+00:00",
+  "state": "FAILED",
+  "stderr_path": ".rlw/state/jobs/job_6b3ea65dd3c5/attempt_a35a5ba808f7/stderr.log",
+  "stdout_path": ".rlw/state/jobs/job_6b3ea65dd3c5/attempt_a35a5ba808f7/stdout.log"
+}

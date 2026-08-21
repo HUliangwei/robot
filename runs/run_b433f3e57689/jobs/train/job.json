@@ -1,0 +1,15 @@
+{
+  "attempt_ids": [
+    "attempt_a35a5ba808f7"
+  ],
+  "command": "runs/run_b433f3e57689/resolved_command.json",
+  "created_at": "2026-08-21T14:30:58.815676+00:00",
+  "ended_at": "2026-08-21T14:33:11.656100+00:00",
+  "job_id": "job_6b3ea65dd3c5",
+  "kind": "train",
+  "last_attempt_id": "attempt_a35a5ba808f7",
+  "run_id": "run_b433f3e57689",
+  "schema_version": "rlw.job/v1",
+  "started_at": "2026-08-21T14:31:50.736720+00:00",
+  "state": "FAILED"
+}

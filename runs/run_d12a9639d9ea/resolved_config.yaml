@@ -1,0 +1,26 @@
+schema_version: rlw.resolved_config/v1
+run_id: run_d12a9639d9ea
+trial_id: trial_389920b0ca53
+experiment_id: experiment_3caec3f65bfd
+recipe: recipes/train/starvla_libero_smoke.yaml
+provider: starvla
+dataset_revision: 3422b9f2387b6f682cf02802904a77b23ab13afd
+provider_runtime:
+  conda_env: null
+  python_executable: D:\Desktop\robot\envs\starvla\python.exe
+git_commit: ad32df60e1f494caf9d53b6aa4d32119e47d946e
+native_overrides:
+  trainer.max_train_steps: 1
+  trainer.num_warmup_steps: 0
+  trainer.save_interval: 1
+  framework.qwenvl.attn_implementation: sdpa
+  trainer.logging_frequency: 1
+  is_debug: true
+  run_root_dir: runs/run_d12a9639d9ea/artifacts/training
+framework: qwen_groot
+native_config: examples/LIBERO/train_files/starvla_cotrain_libero.yaml
+accelerate_config: starVLA/config/deepseeds/deepspeed_zero2.yaml
+num_processes: 1
+dataset_id: libero_provider_native
+native_framework: QwenGR00T
+entrypoint: starVLA/training/train_starvla.py

@@ -1,0 +1,9 @@
+schema_version: rlw.dataset_manifest/v1
+dataset_id: libero_provider_native
+revision: 3422b9f2387b6f682cf02802904a77b23ab13afd
+source:
+  provider: starvla
+  kind: provider_native
+  native_config: examples/LIBERO/train_files/starvla_cotrain_libero.yaml
+immutable: true
+created_at: '2026-08-21T16:25:47.034861+00:00'

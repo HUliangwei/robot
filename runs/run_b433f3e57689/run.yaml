@@ -1,0 +1,22 @@
+schema_version: rlw.run_spec/v1
+experiment:
+  name: pusht_act_smoke
+  question: Can RLW complete a real minimal PushT train and closed-loop evaluation?
+dataset:
+  repo_id: lerobot/pusht
+  revision: b1c3ecbae7f244acc039a3dbc255a00dad1372b9
+policy:
+  provider: lerobot
+  architecture: act
+training:
+  recipe: recipes/train/pusht_act_smoke.yaml
+  native_overrides:
+    steps: 2
+    batch_size: 1
+    num_workers: 0
+    save_freq: 1
+    save_checkpoint: true
+    env_eval_freq: 0
+    eval_steps: 0
+    policy.push_to_hub: false
+    wandb.enable: false

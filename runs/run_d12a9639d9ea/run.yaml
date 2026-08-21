@@ -1,0 +1,20 @@
+schema_version: rlw.run_spec/v1
+experiment:
+  name: starvla_libero_smoke
+  question: Can the current stable StarVLA LIBERO stack be selected and preflighted
+    by RLW?
+dataset:
+  dataset_id: libero_provider_native
+  revision: 3422b9f2387b6f682cf02802904a77b23ab13afd
+policy:
+  provider: starvla
+  architecture: qwen_groot
+training:
+  recipe: recipes/train/starvla_libero_smoke.yaml
+  native_overrides:
+    trainer.max_train_steps: 1
+    trainer.num_warmup_steps: 0
+    trainer.save_interval: 1
+    framework.qwenvl.attn_implementation: sdpa
+    trainer.logging_frequency: 1
+    is_debug: true

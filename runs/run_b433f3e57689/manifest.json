@@ -1,0 +1,219 @@
+{
+  "created_at": "2026-08-21T14:30:58.815676+00:00",
+  "ended_at": "2026-08-21T14:33:11.656100+00:00",
+  "experiment": {
+    "experiment_id": "experiment_033b9d29da0b",
+    "name": "pusht_act_smoke",
+    "question": "Can RLW complete a real minimal PushT train and closed-loop evaluation?",
+    "schema_version": "rlw.experiment/v1"
+  },
+  "git_commit": "ef1f9cd5dbf7277e60e0a333ec6e760f840364bf",
+  "git_state": {
+    "commit": "ef1f9cd5dbf7277e60e0a333ec6e760f840364bf",
+    "schema_version": "rlw.git_state/v1",
+    "source_tree_clean_at_prepare": true
+  },
+  "job": {
+    "attempt_ids": [
+      "attempt_a35a5ba808f7"
+    ],
+    "command": "runs/run_b433f3e57689/resolved_command.json",
+    "created_at": "2026-08-21T14:30:58.815676+00:00",
+    "ended_at": "2026-08-21T14:33:11.656100+00:00",
+    "job_id": "job_6b3ea65dd3c5",
+    "kind": "train",
+    "last_attempt_id": "attempt_a35a5ba808f7",
+    "run_id": "run_b433f3e57689",
+    "schema_version": "rlw.job/v1",
+    "started_at": "2026-08-21T14:31:50.736720+00:00",
+    "state": "FAILED"
+  },
+  "last_attempt": {
+    "attempt_id": "attempt_a35a5ba808f7",
+    "attempt_path": "runs/run_b433f3e57689/jobs/train/attempts/attempt_a35a5ba808f7.json",
+    "exit_code": 1,
+    "runtime_attempt_path": ".rlw/state/jobs/job_6b3ea65dd3c5/attempt_a35a5ba808f7/attempt.json",
+    "state": "FAILED",
+    "stderr_path": ".rlw/state/jobs/job_6b3ea65dd3c5/attempt_a35a5ba808f7/stderr.log",
+    "stdout_path": ".rlw/state/jobs/job_6b3ea65dd3c5/attempt_a35a5ba808f7/stdout.log"
+  },
+  "lineage": {
+    "dataset": {
+      "dataset_id": "lerobot_pusht",
+      "manifest": "datasets/lerobot_pusht/b1c3ecbae7f244acc039a3dbc255a00dad1372b9/dataset.yaml",
+      "revision": "b1c3ecbae7f244acc039a3dbc255a00dad1372b9"
+    },
+    "parents": [],
+    "run_id": "run_b433f3e57689",
+    "schema_version": "rlw.lineage/v1"
+  },
+  "paths": {
+    "command": "runs/run_b433f3e57689/resolved_command.json",
+    "job_record": "runs/run_b433f3e57689/jobs/train/job.json",
+    "lineage": "runs/run_b433f3e57689/lineage.json",
+    "resolved_config": "runs/run_b433f3e57689/resolved_config.yaml",
+    "run_dir": "runs/run_b433f3e57689",
+    "run_spec": "runs/run_b433f3e57689/run.yaml",
+    "training_output": "runs/run_b433f3e57689/artifacts/training"
+  },
+  "preflight": {
+    "checks": [
+      {
+        "detail": {
+          "current": "ef1f9cd5dbf7277e60e0a333ec6e760f840364bf",
+          "prepared": "ef1f9cd5dbf7277e60e0a333ec6e760f840364bf"
+        },
+        "name": "git_commit_match",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": "run manifest must record a clean source tree at prepare time",
+        "name": "prepared_from_clean_source",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": {
+          "dirty_paths": []
+        },
+        "name": "source_tree_clean",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": {
+          "immutable": true,
+          "manifest": "datasets/lerobot_pusht/b1c3ecbae7f244acc039a3dbc255a00dad1372b9/dataset.yaml",
+          "revision": "b1c3ecbae7f244acc039a3dbc255a00dad1372b9"
+        },
+        "name": "dataset_manifest_valid",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": "datasets/hub/datasets--lerobot--pusht/snapshots/b1c3ecbae7f244acc039a3dbc255a00dad1372b9",
+        "name": "dataset_revision_available",
+        "ok": true,
+        "required": false
+      },
+      {
+        "detail": {
+          "argv0": "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+          "cwd": "D:\\Desktop\\robot"
+        },
+        "name": "command_spec_valid",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": "runs/run_b433f3e57689/artifacts/training",
+        "name": "output_directory_writable",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+        "name": "provider_runtime_resolved",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": {
+          "cuda_available": true,
+          "lerobot_installed": true,
+          "lerobot_version": "0.6.1",
+          "torch_installed": true,
+          "torch_version": "2.11.0+cu128"
+        },
+        "name": "provider_import",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": "2.11.0+cu128",
+        "name": "torch_import",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": "0.6.1",
+        "name": "lerobot_import",
+        "ok": true,
+        "required": true
+      },
+      {
+        "detail": true,
+        "name": "cuda_available",
+        "ok": true,
+        "required": false
+      }
+    ],
+    "ok": true,
+    "run_id": "run_b433f3e57689",
+    "schema_version": "rlw.golden_preflight/v1"
+  },
+  "provider": {
+    "adapter_version": "0.2",
+    "capabilities": [
+      "dataset",
+      "train",
+      "rollout",
+      "eval",
+      "hardware"
+    ],
+    "name": "lerobot",
+    "schema_version": "rlw.provider_spec/v1",
+    "version": null
+  },
+  "provider_runtime": {
+    "conda_env": null,
+    "conda_prefix": "D:\\Desktop\\robot\\envs\\lerobot-win",
+    "provider": "lerobot",
+    "provider_root": null,
+    "python_executable": "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+    "schema_version": "rlw.provider_runtime_resolution/v1",
+    "source": "configured"
+  },
+  "resolved_config": {
+    "dataset_repo_id": "lerobot/pusht",
+    "dataset_revision": "b1c3ecbae7f244acc039a3dbc255a00dad1372b9",
+    "experiment_id": "experiment_033b9d29da0b",
+    "git_commit": "ef1f9cd5dbf7277e60e0a333ec6e760f840364bf",
+    "native_overrides": {
+      "batch_size": 1,
+      "env_eval_freq": 0,
+      "eval_steps": 0,
+      "num_workers": 0,
+      "output_dir": "runs/run_b433f3e57689/artifacts/training",
+      "policy.push_to_hub": false,
+      "save_checkpoint": true,
+      "save_freq": 1,
+      "steps": 2,
+      "wandb.enable": false
+    },
+    "policy_type": "act",
+    "provider": "lerobot",
+    "provider_runtime": {
+      "conda_env": null,
+      "python_executable": "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe"
+    },
+    "recipe": "recipes/train/pusht_act_smoke.yaml",
+    "run_id": "run_b433f3e57689",
+    "schema_version": "rlw.resolved_config/v1",
+    "trial_id": "trial_6ae1f437e95f"
+  },
+  "run_id": "run_b433f3e57689",
+  "schema_version": "rlw.run_manifest/v1",
+  "started_at": "2026-08-21T14:31:50.736720+00:00",
+  "status": "FAILED",
+  "trial": {
+    "experiment_id": "experiment_033b9d29da0b",
+    "resolved_variables": {
+      "dataset_revision": "b1c3ecbae7f244acc039a3dbc255a00dad1372b9",
+      "policy_type": "act"
+    },
+    "schema_version": "rlw.trial/v1",
+    "trial_id": "trial_6ae1f437e95f"
+  }
+}

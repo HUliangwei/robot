@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "D:\\Desktop\\robot\\envs\\lerobot-win\\python.exe",
+    "-m",
+    "lerobot.scripts.lerobot_eval",
+    "--policy.path=D:\\Desktop\\robot\\runs\\run_206858ca58f8\\artifacts\\training\\checkpoints\\000002\\pretrained_model",
+    "--env.type=pusht",
+    "--eval.n_episodes=1",
+    "--eval.batch_size=1",
+    "--output_dir=D:\\Desktop\\robot\\runs\\run_206858ca58f8\\artifacts\\training\\evaluation"
+  ],
+  "attempt_id": "attempt_2759418c5205",
+  "cwd": "D:\\Desktop\\robot",
+  "ended_at": "2026-08-21T16:43:24.834450+00:00",
+  "exit_code": 0,
+  "job_id": "job_a89f1ff01701",
+  "runtime_record_path": ".rlw/state/jobs/job_a89f1ff01701/attempt_2759418c5205/attempt.json",
+  "schema_version": "rlw.execution_attempt/v1",
+  "started_at": "2026-08-21T16:41:58.793725+00:00",
+  "state": "SUCCEEDED",
+  "stderr_path": ".rlw/state/jobs/job_a89f1ff01701/attempt_2759418c5205/stderr.log",
+  "stdout_path": ".rlw/state/jobs/job_a89f1ff01701/attempt_2759418c5205/stdout.log"
+}

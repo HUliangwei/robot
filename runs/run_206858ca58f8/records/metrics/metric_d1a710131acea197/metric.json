@@ -1,0 +1,14 @@
+{
+  "aggregation": "mean",
+  "definition_version": "pusht/v1",
+  "direction": "higher_is_better",
+  "episodes": 1,
+  "metric_id": "metric_d1a710131acea197",
+  "name": "avg_max_reward",
+  "namespace": "lerobot",
+  "run_id": "run_206858ca58f8",
+  "schema_version": "rlw.metric_record/v1",
+  "scope": "task",
+  "source": "runs/run_206858ca58f8/artifacts/training/evaluation/metrics.json",
+  "value": 0.016161635587489686
+}
