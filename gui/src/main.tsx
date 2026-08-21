@@ -20,6 +20,7 @@ import {
   providerArchitectureRows,
   type ProviderDescriptor,
   type ProviderDoctor,
+  buildProviderActionPath,
 } from './providers'
 import './styles.css'
 
@@ -101,6 +102,9 @@ function App() {
   const [comparison, setComparison] = useState<MetricComparison | null>(null)
   const [observability, setObservability] = useState<RunObservability | null>(null)
   const [inspectingRun, setInspectingRun] = useState('')
+  const [workflow, setWorkflow] = useState('pusht-act')
+  const [providerEnv, setProviderEnv] = useState('')
+  const [providerRoot, setProviderRoot] = useState('')
   const [actionRun, setActionRun] = useState('')
   const [acceptedExecution, setAcceptedExecution] = useState<{ runId: string; until: number } | null>(null)
 
@@ -131,7 +135,12 @@ function App() {
   const prepare = async () => {
     setMessage('')
     try {
-      const x: any = await postJson('/golden/prepare', { dataset_revision: revision, provider_env: 'lerobot-win' })
+      const x: any = await postJson('/golden/prepare', {
+        workflow,
+        dataset_revision: revision,
+        provider_env: providerEnv.trim() || undefined,
+        provider_root: providerRoot.trim() || undefined,
+      })
       setMessage(`已准备 Prepared: ${x.run_id}`)
       await refresh()
       setTab('runs')
@@ -270,14 +279,30 @@ function App() {
           <Card label="遗留项目 Legacy Projects" value={overview?.legacy.projects ?? '—'} />
           <Card label="检测项 Doctor Checks" value={doctor ? `${ok}/${Object.keys(doctor.checks).length}` : '—'} />
         </section>
+          <p className="muted">准备 Prepare 会创建实验 Experiment → 试验 Trial → 运行 Run → 任务 Job 元数据；执行 Execute 会产生执行尝试 ExecutionAttempt。</p>
         <section className="panel">
-          <div className="panelTitle">PushT + ACT 标准路径 Golden Path</div>
-          <p>准备 Prepare 会创建不可变数据集版本 DatasetRevision、实验 Experiment → 试验 Trial → 运行 Run → 任务 Job 元数据，并生成解析配置 Resolved Config 与命令规范 CommandSpec。</p>
-          <p className="muted">真正执行会产生执行尝试 ExecutionAttempt；训练逻辑仍由 LeRobot Provider 负责。</p>
+          <div className="panelTitle">本地标准路径 Golden Path / Local</div>
+          <p>选择工作流后，RLW 会从已配置的 Provider 运行时构造可复现 Run；准备操作不会启动训练。</p>
           <div className="formrow">
+            <select value={workflow} onChange={e => setWorkflow(e.target.value)}>
+              <option value="pusht-act">PushT + ACT / LeRobot</option>
+              <option value="starvla-qwenoft">StarVLA + QwenOFT</option>
+            </select>
             <input value={revision} onChange={e => setRevision(e.target.value)} placeholder="不可变数据集版本 / Immutable Dataset Revision / Commit SHA" />
-            <button className="primary" onClick={prepare} disabled={!revision.trim()}>准备 PushT ACT 运行 Prepare Run</button>
+            <button className="primary" onClick={prepare} disabled={!revision.trim()}>准备运行 Prepare Run</button>
           </div>
+          {workflow === 'starvla-qwenoft' && <div className="formrow runtimeOverrides">
+            <input
+              value={providerEnv}
+              onChange={e => setProviderEnv(e.target.value)}
+              placeholder="可选环境覆盖 Optional env override (例如 starvla)"
+            />
+            <input
+              value={providerRoot}
+              onChange={e => setProviderRoot(e.target.value)}
+              placeholder="可选源码目录覆盖 Optional StarVLA checkout"
+            />
+          </div>}
           {message && <p className="muted">{message}</p>}
           <p className="muted">执行前先做预检 Preflight；可在 Runs 页面确认执行，也可从项目根目录使用 <code>rlw run execute &lt;RUN_ID&gt;</code>。</p>
         </section>
@@ -326,14 +351,78 @@ function ProviderRecords({ items, doctors, busyProvider, onDoctor }: {
   busyProvider: string
   onDoctor: (provider: ProviderDescriptor) => void
 }) {
+  const [settings, setSettings] = useState<Record<string, { environment: string; providerRoot: string }>>({})
+  const [providerAction, setProviderAction] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
+  const settingFor = (provider: ProviderDescriptor) => settings[provider.name] ?? {
+    environment: provider.default_environment,
+    providerRoot: '',
+  }
+  const updateSetting = (provider: ProviderDescriptor, field: 'environment' | 'providerRoot', value: string) => {
+    setSettings(current => ({
+      ...current,
+      [provider.name]: { ...settingFor(provider), [field]: value },
+    }))
+  }
+  const configure = async (provider: ProviderDescriptor) => {
+    const setting = settingFor(provider)
+    setProviderAction(`${provider.name}:configure`)
+    try {
+      await postJson(buildProviderActionPath(provider.name, 'configure'), {
+        environment: setting.environment.trim(),
+        provider_root: setting.providerRoot.trim() || undefined,
+      })
+      setActionMessage(`${provider.name} 本地运行时已保存 Runtime configured`)
+      await onDoctor(provider)
+    } catch (e) {
+      setActionMessage(`配置失败 Configure failed: ${String(e)}`)
+    } finally {
+      setProviderAction('')
+    }
+  }
+  const install = async (provider: ProviderDescriptor) => {
+    const setting = settingFor(provider)
+    setProviderAction(`${provider.name}:install`)
+    try {
+      const plan: any = await postJson(buildProviderActionPath(provider.name, 'install'), {
+        environment: setting.environment.trim(),
+        provider_root: setting.providerRoot.trim() || undefined,
+      })
+      setActionMessage(`安装计划 Install plan: ${plan.steps.map((x: any) => x.id).join(' → ')}`)
+      if (window.confirm(`执行 ${provider.name} 安装计划？\nExecute Provider install plan?`)) {
+        await postJson(buildProviderActionPath(provider.name, 'install'), {
+          environment: setting.environment.trim(),
+          provider_root: setting.providerRoot.trim() || undefined,
+          confirmation: provider.name,
+        })
+        setActionMessage(`${provider.name} 安装完成 Provider installed`)
+        await onDoctor(provider)
+      }
+    } catch (e) { setActionMessage(`安装失败 Install failed: ${String(e)}`) }
+    finally { setProviderAction('') }
+  }
   return <section className="panel">
     <div className="panelTitle">Provider 能力与本地状态 Provider Capabilities</div>
     <p className="muted">架构能力属于各 Provider；RLW 只投影、验证并构造命令，不在 GUI 内执行 Provider 逻辑。</p>
+    {actionMessage && <p className="actionMessage">{actionMessage}</p>}
     <div className="providerGrid">{items.map(provider => {
       const report = doctors[provider.name]
       const architectures = providerArchitectureRows(provider)
+      const setting = settingFor(provider)
       return <article className="providerCard" key={provider.name}>
         <div className="providerHeading">
+        <div className="providerRuntimeForm">
+          <input value={setting.environment} onChange={e => updateSetting(provider, 'environment', e.target.value)} placeholder="Conda environment" />
+          {provider.name === 'starvla' && <input value={setting.providerRoot} onChange={e => updateSetting(provider, 'providerRoot', e.target.value)} placeholder="StarVLA checkout root" />}
+          <div className="providerButtons">
+            <button className="secondary" onClick={() => configure(provider)} disabled={providerAction !== ''}>
+              {providerAction === `${provider.name}:configure` ? '保存中 Saving…' : '保存运行时 Configure'}
+            </button>
+            {provider.name === 'starvla' && <button className="secondary" onClick={() => install(provider)} disabled={providerAction !== ''}>
+              {providerAction === `${provider.name}:install` ? '处理中 Working…' : '规划并安装 Plan / Install'}
+            </button>}
+          </div>
+        </div>
           <div><h2>{provider.name}</h2><small>Adapter {provider.spec.adapter_version} · Env {provider.default_environment}</small></div>
           <span className={`statusBadge ${report?.ready ? 'readyBadge' : ''}`}>{report ? (report.ready ? 'READY' : 'NOT READY') : 'NOT CHECKED'}</span>
         </div>

@@ -18,12 +18,24 @@ def test_cli_exposes_provider_dev_and_run_contract():
         ["provider", "command", "starvla", "--recipe", "recipes/train/starvla_qwenoft.yaml"]
     )
     assert command.provider == "starvla"
+    configure = parser.parse_args(
+        ["provider", "configure", "starvla", "--environment", "starvla", "--provider-root", "D:/starVLA"]
+    )
+    assert configure.provider == "starvla"
+    install = parser.parse_args(["provider", "install", "starvla", "--confirm", "starvla"])
+    assert install.confirm == "starvla"
     assert parser.parse_args(["dev", "test"]).dev_command == "test"
     prepared = parser.parse_args(
         ["run", "prepare", "pusht-act", "--dataset-revision", "a" * 40]
     )
     assert prepared.workflow == "pusht-act"
     assert prepared.dataset_revision == "a" * 40
+    starvla = parser.parse_args(
+        ["run", "prepare", "starvla-qwenoft", "--dataset-revision", "c" * 40]
+    )
+    assert starvla.workflow == "starvla-qwenoft"
+    assert starvla.recipe is None
+    assert starvla.provider_env is None
     assert parser.parse_args(["run", "reconcile", "run_x"]).run_id == "run_x"
 
 

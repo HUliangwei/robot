@@ -68,3 +68,8 @@
 .providerChecks { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 12px 0; font-size: 12px; }
 .providerCommand { margin-bottom: 0; font-size: 12px; }
 @media (max-width: 900px) { .providerGrid { grid-template-columns: 1fr; } }
+.formrow select { min-width: 240px; flex: 1; padding: 10px 12px; border: 1px solid #ccd5dc; border-radius: 8px; background: white; }
+.providerRuntimeForm { display: grid; gap: 8px; margin: 14px 0; }
+.providerRuntimeForm input { min-width: 0; width: 100%; padding: 9px 10px; border: 1px solid #ccd5dc; border-radius: 8px; }
+.providerButtons { display: flex; flex-wrap: wrap; gap: 8px; }
+.runtimeOverrides { margin-top: 8px; }

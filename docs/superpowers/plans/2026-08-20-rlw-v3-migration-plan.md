@@ -115,3 +115,11 @@
 - [x] Expose provider-aware local doctor and preview through root-scoped CLI/API commands.
 - [x] Add a GUI Providers page without Provider SDK or execution logic.
 - [x] Keep StarVLA Run execution and Provider installation for the next local slice.
+
+### Task 13: Complete the StarVLA local Provider lifecycle
+
+- [ ] Add auditable Provider configure/install commands and machine-local runtime records.
+- [ ] Generalize canonical Run preparation and preflight through the Provider registry.
+- [ ] Execute a controlled StarVLA fixture through LocalExecutor and reconcile its checkpoint.
+- [ ] Expose Provider runtime/install-plan state through API and GUI without GUI subprocess logic.
+- [ ] Keep remote nodes, SSH, and host-level CUDA/driver mutation out of scope.

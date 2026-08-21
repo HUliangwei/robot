@@ -1,8 +1,8 @@
-"""Canonical PushT + ACT golden-path orchestration for RLW V0.
+"""Canonical local training orchestration through thin Provider adapters.
 
 This service owns research metadata and delegates provider semantics to the
-LeRobot adapter and process execution to LocalExecutor. It never reimplements
-LeRobot training logic.
+Provider adapters and process execution to LocalExecutor. It never reimplements
+Provider training logic.
 """
 from __future__ import annotations
 
@@ -23,8 +23,9 @@ import yaml
 from workbench.core.domain import CommandSpec
 from workbench.core.ids import new_id
 from workbench.executors.local import LocalExecutor
-from workbench.providers.registry import get_provider
+from workbench.providers.registry import get_provider, get_registration
 from workbench.services.observability import LifecycleEventWriter
+from workbench.services.provider_runtime import resolve_provider_runtime
 from workbench.storage.catalog import Catalog
 from workbench.storage.manifests import atomic_write_json, atomic_write_yaml, read_json
 
@@ -34,7 +35,6 @@ _ALLOWED_GENERATED_PREFIXES = (
     ".rlw/",
     ".rlw_migration_backup/",
     "runs/",
-    "datasets/lerobot_pusht/",
     "gui/dist/",
     "gui/node_modules/",
 )
@@ -86,7 +86,9 @@ def _normalize_status_path(line: str) -> str:
     return path.strip().strip('"').replace("\\", "/")
 
 
-def _is_generated_record(path: str) -> bool:
+def _is_generated_record(path: str, status_code: str) -> bool:
+    if path.startswith("datasets/"):
+        return status_code == "??"
     if path in _ALLOWED_GENERATED_FILES:
         return True
     return any(path.startswith(prefix) for prefix in _ALLOWED_GENERATED_PREFIXES)
@@ -120,8 +122,9 @@ def _source_tree_state(root: Path) -> dict[str, Any]:
     for line in str(status["stdout"]).splitlines():
         if not line.strip():
             continue
+        status_code = line[:2]
         path = _normalize_status_path(line)
-        if _is_generated_record(path):
+        if _is_generated_record(path, status_code):
             ignored.append(path)
         else:
             dirty_paths.append(path)
@@ -160,14 +163,18 @@ class GoldenPathService:
         if not path.is_absolute():
             path = self.root / path
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        required = ("name", "kind", "provider", "policy_type", "dataset_repo_id")
+        required = ("name", "kind", "provider")
         missing = [key for key in required if not data.get(key)]
         if missing:
             raise ValueError(f"recipe missing required fields: {', '.join(missing)}")
         if data["kind"] != "train":
-            raise ValueError("golden path V0 accepts train recipes only")
-        if data["provider"] != "lerobot":
-            raise ValueError("golden path V0 accepts provider=lerobot only")
+            raise ValueError("local Golden Path accepts train recipes only")
+        adapter = get_provider(str(data["provider"]))
+        errors = adapter.validate({**data, "job_kind": "train"})
+        if errors:
+            raise ValueError("; ".join(errors))
+        if not data.get("dataset_repo_id") and not data.get("dataset_id"):
+            raise ValueError("dataset_repo_id or dataset_id is required for train")
         return data
 
     def prepare(
@@ -177,6 +184,7 @@ class GoldenPathService:
         dataset_revision: str,
         provider_env: str | None = None,
         python_executable: str | None = None,
+        provider_root: str | Path | None = None,
     ) -> dict[str, Any]:
         revision = (dataset_revision or "").strip()
         if revision.lower() in _MUTABLE_REVISIONS:
@@ -192,7 +200,21 @@ class GoldenPathService:
                 f"Dirty source paths: {dirty}"
             )
         recipe = self._recipe(recipe_path)
-        adapter = get_provider("lerobot")
+        provider_name = str(recipe["provider"]).lower()
+        adapter = get_provider(provider_name)
+        registration = get_registration(provider_name)
+        runtime = resolve_provider_runtime(
+            self.root,
+            provider_name,
+            environment=provider_env,
+            python_executable=python_executable,
+            provider_root=provider_root,
+        )
+        if registration.checkout_files and not runtime.get("provider_root"):
+            raise ValueError(
+                f"Provider {provider_name!r} requires a configured checkout; "
+                f"run `rlw provider configure {provider_name} ...` first"
+            )
 
         recipe_source = Path(recipe_path)
         recipe_resolved = recipe_source.resolve() if recipe_source.is_absolute() else (self.root / recipe_source).resolve()
@@ -205,7 +227,8 @@ class GoldenPathService:
         trial_id = new_id("trial")
         run_id = new_id("run")
         job_id = new_id("job")
-        dataset_id = _slug(recipe["dataset_repo_id"])
+        dataset_reference = recipe.get("dataset_repo_id") or recipe.get("dataset_id")
+        dataset_id = _slug(str(dataset_reference))
 
         run_rel = Path("runs") / run_id
         run_dir = self.root / run_rel
@@ -215,31 +238,51 @@ class GoldenPathService:
 
         requested_native = dict(recipe.get("native_overrides") or {})
         native = dict(requested_native)
-        native["output_dir"] = output_rel.as_posix()
+        output_key = "output_dir" if provider_name == "lerobot" else "run_root_dir"
+        native[output_key] = output_rel.as_posix()
+        architecture = recipe.get("policy_type") or recipe.get("framework")
         resolved = {
             "schema_version": "rlw.resolved_config/v1",
             "run_id": run_id,
             "trial_id": trial_id,
             "experiment_id": experiment_id,
             "recipe": recipe_ref,
-            "provider": "lerobot",
-            "policy_type": recipe["policy_type"],
-            "dataset_repo_id": recipe["dataset_repo_id"],
+            "provider": provider_name,
             "dataset_revision": revision,
             "provider_runtime": {
-                "conda_env": provider_env,
-                "python_executable": python_executable,
+                "conda_env": runtime.get("conda_env"),
+                "python_executable": runtime.get("python_executable"),
             },
             "git_commit": source_state["commit"],
             "native_overrides": native,
         }
+        for key in (
+            "policy_type",
+            "framework",
+            "native_framework",
+            "native_config",
+            "accelerate_config",
+            "entrypoint",
+            "num_processes",
+            "dataset_repo_id",
+            "dataset_id",
+        ):
+            if recipe.get(key) is not None:
+                resolved[key] = recipe[key]
+        provider_resolved = adapter.resolve_config(resolved)
+        resolved.update(provider_resolved)
+        resolved["native_overrides"] = native
 
+        command_native = dict(native)
+        if provider_name == "starvla":
+            command_native[output_key] = str(output_dir.resolve())
+        command_config = {**resolved, "native_overrides": command_native}
         command = adapter.build_command(
             "train",
-            resolved,
-            provider_env=provider_env,
-            python_executable=python_executable,
-            cwd=str(self.root),
+            command_config,
+            provider_env=runtime.get("conda_env"),
+            python_executable=runtime.get("python_executable"),
+            cwd=str(runtime.get("provider_root") or self.root),
         )
         command_payload = {
             "schema_version": "rlw.command_spec/v1",
@@ -250,15 +293,24 @@ class GoldenPathService:
 
         dataset_rel = Path("datasets") / dataset_id / revision / "dataset.yaml"
         dataset_path = self.root / dataset_rel
+        dataset_source = (
+            {
+                "provider": "huggingface",
+                "repo_id": recipe["dataset_repo_id"],
+                "revision": revision,
+            }
+            if recipe.get("dataset_repo_id")
+            else {
+                "provider": provider_name,
+                "kind": "provider_native",
+                "native_config": recipe.get("native_config"),
+            }
+        )
         dataset_payload = {
             "schema_version": "rlw.dataset_manifest/v1",
             "dataset_id": dataset_id,
             "revision": revision,
-            "source": {
-                "provider": "huggingface",
-                "repo_id": recipe["dataset_repo_id"],
-                "revision": revision,
-            },
+            "source": dataset_source,
             "immutable": True,
             "created_at": _utc_now(),
         }
@@ -270,19 +322,21 @@ class GoldenPathService:
         else:
             atomic_write_yaml(dataset_path, dataset_payload)
 
+        run_spec_dataset = (
+            {"repo_id": recipe["dataset_repo_id"], "revision": revision}
+            if recipe.get("dataset_repo_id")
+            else {"dataset_id": recipe["dataset_id"], "revision": revision}
+        )
         run_spec = {
             "schema_version": "rlw.run_spec/v1",
             "experiment": {
                 "name": recipe["name"],
-                "question": recipe.get("question", "PushT ACT baseline"),
+                "question": recipe.get("question", "Local Provider training baseline"),
             },
-            "dataset": {
-                "repo_id": recipe["dataset_repo_id"],
-                "revision": revision,
-            },
+            "dataset": run_spec_dataset,
             "policy": {
-                "provider": "lerobot",
-                "architecture": recipe["policy_type"],
+                "provider": provider_name,
+                "architecture": architecture,
             },
             "training": {
                 "recipe": recipe_ref,
@@ -325,23 +379,20 @@ class GoldenPathService:
                 "schema_version": "rlw.experiment/v1",
                 "experiment_id": experiment_id,
                 "name": recipe["name"],
-                "question": recipe.get("question", "PushT ACT baseline"),
+                "question": recipe.get("question", "Local Provider training baseline"),
             },
             "trial": {
                 "schema_version": "rlw.trial/v1",
                 "trial_id": trial_id,
                 "experiment_id": experiment_id,
                 "resolved_variables": {
-                    "policy_type": recipe["policy_type"],
+                    ("policy_type" if provider_name == "lerobot" else "framework"): architecture,
                     "dataset_revision": revision,
                 },
             },
             "job": job_record,
             "provider": adapter.spec().__dict__,
-            "provider_runtime": {
-                "conda_env": provider_env,
-                "python_executable": python_executable,
-            },
+            "provider_runtime": runtime,
             "resolved_config": resolved,
             "lineage": lineage,
             "paths": {
@@ -423,6 +474,8 @@ class GoldenPathService:
 
     def _provider_probe(self, manifest: dict[str, Any]) -> dict[str, Any]:
         runtime = manifest.get("provider_runtime") or {}
+        provider_name = str((manifest.get("provider") or {}).get("name") or "lerobot")
+        registration = get_registration(provider_name)
         py = runtime.get("python_executable")
         conda_env = runtime.get("conda_env")
         if py:
@@ -442,12 +495,22 @@ class GoldenPathService:
             runtime_detail = sys.executable
 
         probe_code = (
-            "import json, lerobot, torch; "
-            "print(json.dumps({'lerobot_version': getattr(lerobot, '__version__', None), "
-            "'torch_version': getattr(torch, '__version__', None), "
-            "'cuda_available': bool(torch.cuda.is_available())}))"
+            "import importlib,json\n"
+            f"packages={list(registration.probe_packages)!r}\n"
+            "payload={}\n"
+            "for name in packages:\n"
+            " try:\n"
+            "  module=importlib.import_module(name)\n"
+            "  payload[name+'_installed']=True\n"
+            "  payload[name+'_version']=getattr(module,'__version__',None)\n"
+            " except Exception as exc:\n"
+            "  payload[name+'_installed']=False\n"
+            "  payload[name+'_error']=str(exc)\n"
+            "payload['cuda_available']=bool(importlib.import_module('torch').cuda.is_available()) if payload.get('torch_installed') else False\n"
+            "print(json.dumps(payload))"
         )
-        result = _run_text([*argv, "-c", probe_code], cwd=self.root, timeout=60)
+        probe_cwd = Path(str(runtime.get("provider_root") or self.root))
+        result = _run_text([*argv, "-c", probe_code], cwd=probe_cwd, timeout=60)
         payload: dict[str, Any] = {}
         if result["ok"]:
             for line in reversed(str(result["stdout"]).splitlines()):
@@ -462,7 +525,10 @@ class GoldenPathService:
         return {
             "resolved": True,
             "runtime": runtime_detail,
-            "probe_ok": bool(result["ok"]),
+            "probe_ok": bool(
+                result["ok"]
+                and all(payload.get(name + "_installed") for name in registration.probe_packages)
+            ),
             "payload": payload,
             "stderr": str(result.get("stderr") or "")[-1200:],
         }
@@ -551,16 +617,55 @@ class GoldenPathService:
                 output_detail = str(exc)
         checks.append(_check("output_directory_writable", writable, output_detail))
 
+        provider_name = str((manifest.get("provider") or {}).get("name") or "lerobot")
+        registration = get_registration(provider_name)
+        runtime = manifest.get("provider_runtime") or {}
+        checkout_value = runtime.get("provider_root")
+        if registration.checkout_files:
+            checkout = Path(str(checkout_value)).resolve() if checkout_value else None
+            missing_checkout = []
+            if checkout is not None and checkout.is_dir():
+                missing_checkout = [
+                    relative
+                    for _, relative in registration.checkout_files
+                    if not (checkout / relative).is_file()
+                ]
+            checks.append(
+                _check(
+                    "provider_checkout_valid",
+                    bool(checkout and checkout.is_dir() and not missing_checkout),
+                    {"root": str(checkout) if checkout else None, "missing": missing_checkout},
+                )
+            )
+            native_config = (manifest.get("resolved_config") or {}).get("native_config")
+            native_path = (checkout / str(native_config)).resolve() if checkout and native_config else None
+            native_safe = bool(native_path and native_path.is_relative_to(checkout))
+            checks.append(
+                _check(
+                    "provider_native_config_available",
+                    bool(native_safe and native_path and native_path.is_file()),
+                    str(native_path) if native_path else native_config,
+                )
+            )
+
         if probe_provider:
             probe = self._provider_probe(manifest)
             checks.append(_check("provider_runtime_resolved", bool(probe.get("resolved")), probe.get("runtime") or probe.get("detail")))
-            checks.append(_check("lerobot_import", bool(probe.get("probe_ok")), probe.get("stderr") or probe.get("payload")))
-            checks.append(_check("torch_import", bool(probe.get("probe_ok")), (probe.get("payload") or {}).get("torch_version")))
+            payload = probe.get("payload") or {}
+            checks.append(_check("provider_import", bool(probe.get("probe_ok")), probe.get("stderr") or payload))
+            for package in registration.probe_packages:
+                checks.append(
+                    _check(
+                        package + "_import",
+                        bool(payload.get(package + "_installed")),
+                        payload.get(package + "_version") or payload.get(package + "_error"),
+                    )
+                )
             checks.append(
                 _check(
                     "cuda_available",
-                    bool((probe.get("payload") or {}).get("cuda_available")),
-                    (probe.get("payload") or {}).get("cuda_available"),
+                    bool(payload.get("cuda_available")),
+                    payload.get("cuda_available"),
                     required=False,
                 )
             )
@@ -751,10 +856,15 @@ class GoldenPathService:
         events = LifecycleEventWriter(self.root, run_id)
         artifacts = 0
         metrics = 0
+        provider_name = str((manifest.get("provider") or {}).get("name") or "lerobot")
+        registration = get_registration(provider_name)
 
         if output_dir.exists():
-            for ckpt in sorted(output_dir.rglob("pretrained_model")):
-                if not ckpt.is_dir():
+            checkpoint_paths: set[Path] = set()
+            for pattern in registration.checkpoint_patterns:
+                checkpoint_paths.update(output_dir.glob(pattern))
+            for ckpt in sorted(checkpoint_paths):
+                if not ckpt.is_dir() and not ckpt.is_file():
                     continue
                 rel = ckpt.relative_to(self.root).as_posix()
                 artifact_id = "artifact_" + hashlib.sha256(f"{run_id}|{rel}".encode()).hexdigest()[:16]
@@ -762,8 +872,9 @@ class GoldenPathService:
                     "schema_version": "rlw.artifact/v1",
                     "artifact_id": artifact_id,
                     "kind": "checkpoint",
-                    "display_name": ckpt.parent.name,
+                    "display_name": ckpt.parent.name if ckpt.name == "pretrained_model" else ckpt.stem,
                     "producer_run": run_id,
+                    "provider": provider_name,
                     "replicas": [
                         {
                             "schema_version": "rlw.artifact_replica/v1",
@@ -844,7 +955,7 @@ class GoldenPathService:
                         "run_id": run_id,
                         "name": str(name),
                         "value": float(value),
-                        "namespace": "lerobot",
+                        "namespace": provider_name,
                         "scope": metadata.get("scope")
                         or metrics_path.parent.relative_to(output_dir).as_posix(),
                         "source": source_rel,

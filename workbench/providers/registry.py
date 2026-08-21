@@ -14,6 +14,10 @@ class ProviderRegistration:
     default_environment: str
     probe_packages: tuple[str, ...]
     checkout_files: tuple[tuple[str, str], ...] = ()
+    install_repository: str | None = None
+    install_revision: str | None = None
+    install_python: str | None = None
+    checkpoint_patterns: tuple[str, ...] = ()
 
 
 _REGISTRY: dict[str, ProviderRegistration] = {
@@ -21,6 +25,7 @@ _REGISTRY: dict[str, ProviderRegistration] = {
         factory=LeRobotAdapter,
         default_environment="lerobot-win",
         probe_packages=("torch", "lerobot"),
+        checkpoint_patterns=("**/pretrained_model",),
     ),
     "starvla": ProviderRegistration(
         factory=StarVLAAdapter,
@@ -29,6 +34,15 @@ _REGISTRY: dict[str, ProviderRegistration] = {
         checkout_files=(
             ("training_entrypoint", "starVLA/training/train_starvla.py"),
             ("accelerate_config", "starVLA/config/deepseeds/deepspeed_zero2.yaml"),
+        ),
+        install_repository="https://github.com/starVLA/starVLA.git",
+        install_revision="starVLA",
+        install_python="3.10",
+        checkpoint_patterns=(
+            "**/checkpoints/*.pt",
+            "**/checkpoints/*.pth",
+            "**/checkpoints/*.bin",
+            "**/checkpoints/*.safetensors",
         ),
     ),
 }
@@ -64,4 +78,3 @@ def provider_descriptors() -> list[dict[str, object]]:
             }
         )
     return items
-

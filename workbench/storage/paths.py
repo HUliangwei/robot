@@ -15,7 +15,17 @@ def find_project_root(start: str | Path | None = None) -> Path:
 
 def ensure_runtime_dirs(root: Path) -> dict[str, Path]:
     base = root / ".rlw"
-    names = ("envs", "worktrees", "cache", "state", "locks", "tmp", "secrets", "import_candidates")
+    names = (
+        "envs",
+        "providers",
+        "worktrees",
+        "cache",
+        "state",
+        "locks",
+        "tmp",
+        "secrets",
+        "import_candidates",
+    )
     out = {name: base / name for name in names}
     for path in (base, *out.values()):
         path.mkdir(parents=True, exist_ok=True)

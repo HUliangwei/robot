@@ -250,3 +250,64 @@ def test_provider_doctor_api_passes_provider_runtime_selection(tmp_path, monkeyp
         "environment": "vla-dev",
         "provider_root": "D:/starVLA",
     }
+
+
+def test_provider_runtime_api_configures_and_reads_machine_local_selection(tmp_path):
+    checkout = tmp_path / "provider-fixture" / "starvla"
+    for relative in (
+        "starVLA/training/train_starvla.py",
+        "starVLA/config/deepseeds/deepspeed_zero2.yaml",
+    ):
+        path = checkout / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# fixture\n", encoding="utf-8")
+    client = TestClient(create_app(tmp_path))
+    configured = client.post(
+        "/api/v1/providers/starvla/configure",
+        json={"environment": "vla-dev", "provider_root": str(checkout)},
+    )
+    runtime = client.get("/api/v1/providers/starvla/runtime")
+    assert configured.status_code == 200
+    assert configured.json()["schema_version"] == "rlw.provider_runtime/v1"
+    assert runtime.status_code == 200
+    assert runtime.json()["environment"] == "vla-dev"
+    assert runtime.json()["checkout_root"] == str(checkout.resolve())
+
+
+def test_provider_install_api_is_plan_only_without_exact_confirmation(tmp_path):
+    response = TestClient(create_app(tmp_path)).post(
+        "/api/v1/providers/starvla/install", json={}
+    )
+    assert response.status_code == 200
+    assert response.json()["schema_version"] == "rlw.provider_install_plan/v1"
+    assert response.json()["executed"] is False
+    assert response.json()["confirmation"] == "starvla"
+
+
+def test_golden_prepare_api_maps_starvla_workflow_and_runtime_override(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_prepare(self, recipe, **kwargs):
+        captured["recipe"] = recipe
+        captured.update(kwargs)
+        return {"run_id": "run_starvla"}
+
+    monkeypatch.setattr("workbench.api.app.GoldenPathService.prepare", fake_prepare)
+    response = TestClient(create_app(tmp_path)).post(
+        "/api/v1/golden/prepare",
+        json={
+            "workflow": "starvla-qwenoft",
+            "dataset_revision": "a" * 40,
+            "provider_root": "D:/starVLA",
+            "provider_env": "vla-dev",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["run_id"] == "run_starvla"
+    assert captured == {
+        "recipe": "recipes/train/starvla_qwenoft.yaml",
+        "dataset_revision": "a" * 40,
+        "provider_env": "vla-dev",
+        "python_executable": None,
+        "provider_root": "D:/starVLA",
+    }

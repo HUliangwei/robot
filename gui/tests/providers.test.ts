@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildProviderDoctorPath, providerArchitectureRows } from '../src/providers.ts'
+import { buildProviderActionPath, buildProviderDoctorPath, providerArchitectureRows } from '../src/providers.ts'
 
 test('provider doctor path keeps provider and runtime selection in the API request', () => {
   assert.equal(
     buildProviderDoctorPath('starvla', 'vla dev', 'D:/Providers/star VLA'),
     '/providers/starvla/doctor?environment=vla+dev&provider_root=D%3A%2FProviders%2Fstar+VLA',
   )
+})
+
+test('provider configuration and install stay behind provider API paths', () => {
+  assert.equal(buildProviderActionPath('star vla', 'configure'), '/providers/star%20vla/configure')
+  assert.equal(buildProviderActionPath('starvla', 'install'), '/providers/starvla/install')
 })
 
 test('provider architecture projection remains provider-owned display data', () => {

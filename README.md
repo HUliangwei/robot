@@ -107,7 +107,7 @@ rlw run inspect RUN_ID
 rlw evaluation compare RUN_A RUN_B
 ```
 
-## Inspect local Providers
+## Configure and install local Providers
 
 RLW currently registers LeRobot and StarVLA behind the same thin Provider
 boundary. List their stable capabilities from the repository root:
@@ -115,27 +115,59 @@ boundary. List their stable capabilities from the repository root:
 ```powershell
 rlw provider list
 rlw provider doctor lerobot
-rlw provider doctor starvla --environment starvla
+rlw provider doctor starvla
 ```
 
 If StarVLA is checked out elsewhere on this machine, include its root so RLW
 also validates the expected upstream entrypoint and Accelerate configuration:
 
 ```powershell
-rlw provider doctor starvla --environment starvla --provider-root D:\path\to\starVLA
+rlw provider configure starvla --environment starvla --provider-root D:\path\to\starVLA
+rlw provider doctor starvla
 ```
 
 Preview the command that the adapter would construct without starting training:
 
 ```powershell
-rlw provider command starvla --recipe recipes/train/starvla_qwenoft.yaml --environment starvla --provider-root D:\path\to\starVLA
+rlw provider command starvla --recipe recipes/train/starvla_qwenoft.yaml
 ```
 
-The preview is deliberately non-executing (`executed: false`). R16 validates the
-second Provider boundary; StarVLA canonical Run execution and Provider
-installation are the next local slice. The GUI's **提供器 Providers** page reads
-the same registry and doctor APIs. Do not run upstream `accelerate`, Conda, or
-GUI package-manager commands manually for ordinary RLW operations.
+The preview is deliberately non-executing (`executed: false`). Runtime selection
+is stored under the ignored `.rlw/providers/` directory. Explicit runtime flags
+override the stored selection for one command. The GUI's **提供器 Providers**
+page uses the same API for configuration, install planning, confirmation, and
+Doctor checks.
+
+If StarVLA is not installed, inspect the side-effect-free plan first, then
+repeat it with exact confirmation:
+
+```powershell
+rlw provider install starvla
+rlw provider install starvla --confirm starvla
+rlw provider doctor starvla
+```
+
+The managed plan uses an isolated Python 3.10 Conda environment and registers
+the runtime only after every required step succeeds. FlashAttention remains an
+explicit compatibility item because its build must match CUDA and PyTorch; RLW
+does not silently mutate host drivers or CUDA.
+
+## Prepare and run StarVLA
+
+After Provider Doctor reports `READY`, use the canonical workflow:
+
+```powershell
+rlw run prepare starvla-qwenoft --dataset-revision REVISION
+rlw run preflight RUN_ID
+rlw run execute RUN_ID
+rlw run inspect RUN_ID
+rlw run reconcile RUN_ID
+```
+
+`prepare` resolves the saved runtime, native config, portable lineage, and exact
+command without starting training. Reconcile discovers StarVLA checkpoints and
+registers provider-attributed Artifact records. The GUI overview exposes both
+`pusht-act` and `starvla-qwenoft` through the same API.
 
 The local Run flow is **Preflight → Execute → Inspect → Reconcile**. `execute`
 repeats the required preflight checks before starting the Provider process;

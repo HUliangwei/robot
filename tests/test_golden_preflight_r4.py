@@ -89,6 +89,24 @@ def test_preflight_allows_rlw_generated_records_without_marking_source_dirty(tmp
     assert checks["dataset_revision_available"]["ok"] is True
 
 
+def test_preflight_does_not_ignore_tracked_dataset_mutations(tmp_path: Path):
+    recipe = _init_clean_repo(tmp_path)
+    definition = tmp_path / "datasets" / "custom" / "definition.yaml"
+    definition.parent.mkdir(parents=True)
+    definition.write_text("version: 1\n", encoding="utf-8")
+    _git(tmp_path, "add", "datasets/custom/definition.yaml")
+    _git(tmp_path, "commit", "-m", "track dataset definition")
+    service = GoldenPathService(tmp_path)
+    prepared = service.prepare(recipe, dataset_revision="9" * 40, provider_env="lerobot-win")
+
+    definition.write_text("version: 2\n", encoding="utf-8")
+    report = service.preflight(prepared["run_id"], probe_provider=False)
+    checks = {item["name"]: item for item in report["checks"]}
+
+    assert checks["source_tree_clean"]["ok"] is False
+    assert "datasets/custom/definition.yaml" in checks["source_tree_clean"]["detail"]["dirty_paths"]
+
+
 def test_execute_refuses_when_preflight_fails(tmp_path: Path):
     recipe = _init_clean_repo(tmp_path)
     service = GoldenPathService(tmp_path)

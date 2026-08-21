@@ -20,13 +20,25 @@ from workbench.services.provider_doctor import (
 )
 from workbench.services.run_actions import LocalRunActionService, RunStateError
 from workbench.storage.catalog import Catalog
+from workbench.services.provider_install import (
+    build_provider_install_plan,
+    execute_provider_install,
+)
+from workbench.services.provider_runtime import (
+    configure_provider_runtime,
+    read_provider_runtime,
+    resolve_provider_runtime,
+)
 from workbench.storage.paths import ensure_runtime_dirs, find_project_root
 
 
 class GoldenPrepareRequest(BaseModel):
     dataset_revision: str
-    recipe: str = "recipes/train/pusht_act.yaml"
-    provider_env: str = "lerobot-win"
+    workflow: str = "pusht-act"
+    recipe: str | None = None
+    provider_env: str | None = None
+    python_executable: str | None = None
+    provider_root: str | None = None
 
 
 class RunExecuteRequest(BaseModel):
@@ -38,6 +50,26 @@ class ProviderCommandRequest(BaseModel):
     provider_env: str | None = None
     python_executable: str | None = None
     provider_root: str | None = None
+
+
+class ProviderConfigureRequest(BaseModel):
+    environment: str | None = None
+    python_executable: str | None = None
+    provider_root: str | None = None
+
+
+class ProviderInstallRequest(BaseModel):
+    environment: str | None = None
+    provider_root: str | None = None
+    repository: str | None = None
+    revision: str | None = None
+    confirmation: str | None = None
+
+
+_WORKFLOW_RECIPES = {
+    "pusht-act": "recipes/train/pusht_act.yaml",
+    "starvla-qwenoft": "recipes/train/starvla_qwenoft.yaml",
+}
 
 
 def create_app(root: str | Path | None = None) -> FastAPI:
@@ -124,10 +156,15 @@ def create_app(root: str | Path | None = None) -> FastAPI:
         provider_root: str | None = None,
     ):
         try:
-            return run_provider_doctor(
-                target,
+            runtime = resolve_provider_runtime(
+                project_root, target,
                 environment=environment,
                 provider_root=provider_root,
+            )
+            return run_provider_doctor(
+                target,
+                environment=runtime["conda_env"],
+                provider_root=runtime["provider_root"],
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -159,10 +196,15 @@ def create_app(root: str | Path | None = None) -> FastAPI:
     @app.post("/api/v1/golden/prepare")
     def golden_prepare(req: GoldenPrepareRequest):
         try:
+            if req.workflow not in _WORKFLOW_RECIPES:
+                raise ValueError(f"unknown workflow: {req.workflow}")
+            recipe = req.recipe or _WORKFLOW_RECIPES[req.workflow]
             return GoldenPathService(project_root).prepare(
-                req.recipe,
+                recipe,
                 dataset_revision=req.dataset_revision,
                 provider_env=req.provider_env,
+                python_executable=req.python_executable,
+                provider_root=req.provider_root,
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -173,6 +215,49 @@ def create_app(root: str | Path | None = None) -> FastAPI:
             return GoldenPathService(project_root).preflight(run_id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/v1/providers/{provider}/runtime")
+    def provider_runtime(provider: str):
+        try:
+            record = read_provider_runtime(project_root, provider)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if record is None:
+            raise HTTPException(status_code=404, detail="Provider runtime is not configured")
+        return record
+
+    @app.post("/api/v1/providers/{provider}/configure")
+    def provider_configure(provider: str, req: ProviderConfigureRequest):
+        try:
+            return configure_provider_runtime(
+                project_root, provider,
+                environment=req.environment,
+                python_executable=req.python_executable,
+                provider_root=req.provider_root,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/v1/providers/{provider}/install")
+    def provider_install(provider: str, req: ProviderInstallRequest):
+        try:
+            plan = build_provider_install_plan(
+                project_root, provider,
+                environment=req.environment,
+                provider_root=req.provider_root,
+                repository=req.repository,
+                revision=req.revision,
+            )
+            if req.confirmation is None:
+                return plan
+            result = execute_provider_install(
+                project_root, plan, confirmation=req.confirmation
+            )
+            if result.get("status") == "FAILED":
+                raise HTTPException(status_code=409, detail=result)
+            return result
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post(
         "/api/v1/runs/{run_id}/execute",

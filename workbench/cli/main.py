@@ -22,8 +22,21 @@ from workbench.services.provider_doctor import (
     preview_provider_command,
     run_provider_doctor,
 )
+from workbench.services.provider_install import (
+    build_provider_install_plan,
+    execute_provider_install,
+)
+from workbench.services.provider_runtime import (
+    configure_provider_runtime,
+    resolve_provider_runtime,
+)
 from workbench.services.test_runner import run_pytest
 from workbench.storage.catalog import Catalog
+_WORKFLOW_RECIPES = {
+    "pusht-act": "recipes/train/pusht_act.yaml",
+    "starvla-qwenoft": "recipes/train/starvla_qwenoft.yaml",
+}
+
 from workbench.storage.manifests import read_json
 from workbench.storage.paths import ensure_runtime_dirs, find_project_root
 
@@ -140,11 +153,14 @@ def _add_output_flags(parser: argparse.ArgumentParser) -> None:
 
 def _add_prepare_args(parser: argparse.ArgumentParser, *, workflow: bool) -> None:
     if workflow:
-        parser.add_argument("workflow", nargs="?", default="pusht-act", choices=["pusht-act"])
-    parser.add_argument("--recipe", default="recipes/train/pusht_act.yaml")
+        parser.add_argument(
+            "workflow", nargs="?", default="pusht-act", choices=sorted(_WORKFLOW_RECIPES)
+        )
+    parser.add_argument("--recipe", default=None if workflow else "recipes/train/pusht_act.yaml")
     parser.add_argument("--dataset-revision")
-    parser.add_argument("--provider-env", default="lerobot-win")
+    parser.add_argument("--provider-env", default=None if workflow else "lerobot-win")
     parser.add_argument("--python-executable")
+    parser.add_argument("--provider-root")
     _add_output_flags(parser)
 
 
@@ -213,6 +229,24 @@ Core workflow:
     provider_command.add_argument("--python-executable")
     provider_command.add_argument("--provider-root")
     _add_output_flags(provider_command)
+    provider_configure = provider_sub.add_parser(
+        "configure", help="register an existing machine-local Provider runtime"
+    )
+    provider_configure.add_argument("provider")
+    provider_configure.add_argument("--environment")
+    provider_configure.add_argument("--python-executable")
+    provider_configure.add_argument("--provider-root")
+    _add_output_flags(provider_configure)
+    provider_install = provider_sub.add_parser(
+        "install", help="plan or explicitly confirm a user-space Provider install"
+    )
+    provider_install.add_argument("provider")
+    provider_install.add_argument("--environment")
+    provider_install.add_argument("--provider-root")
+    provider_install.add_argument("--repository")
+    provider_install.add_argument("--revision")
+    provider_install.add_argument("--confirm")
+    _add_output_flags(provider_install)
 
     catalog = sub.add_parser("catalog", help="rebuildable research catalog")
     catalog_sub = catalog.add_subparsers(dest="catalog_command", required=True)
@@ -411,10 +445,20 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.provider_command == "doctor":
             try:
+                registered = {item["name"] for item in list_providers()["items"]}
+                runtime = (
+                    resolve_provider_runtime(
+                        root, args.target,
+                        environment=args.environment,
+                        provider_root=args.provider_root,
+                    )
+                    if args.target in registered
+                    else {"conda_env": args.environment, "provider_root": args.provider_root}
+                )
                 result = run_provider_doctor(
                     args.target,
-                    environment=args.environment,
-                    provider_root=args.provider_root,
+                    environment=runtime["conda_env"],
+                    provider_root=runtime["provider_root"],
                 )
             except ValueError as exc:
                 _emit(
@@ -426,6 +470,50 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             _emit_provider_doctor(result, json_mode=json_mode)
             return 0 if result["ready"] else 1
+        if args.provider_command == "configure":
+            try:
+                result = configure_provider_runtime(
+                    root,
+                    args.provider,
+                    environment=args.environment,
+                    python_executable=args.python_executable,
+                    provider_root=args.provider_root,
+                )
+            except ValueError as exc:
+                _emit("Provider Configure", "Runtime configuration was rejected.", {"status": "error", "error": str(exc)}, json_mode=json_mode)
+                return 2
+            _emit("Provider Configure", "Register a validated machine-local Provider runtime.", result, json_mode=json_mode, next_steps=[f"rlw provider doctor {args.provider}"])
+            return 0
+        if args.provider_command == "install":
+            try:
+                plan = build_provider_install_plan(
+                    root,
+                    args.provider,
+                    environment=args.environment,
+                    provider_root=args.provider_root,
+                    repository=args.repository,
+                    revision=args.revision,
+                )
+                result = (
+                    execute_provider_install(root, plan, confirmation=args.confirm)
+                    if args.confirm is not None
+                    else plan
+                )
+            except ValueError as exc:
+                _emit("Provider Install", "Provider installation was rejected.", {"status": "error", "error": str(exc)}, json_mode=json_mode)
+                return 2
+            _emit(
+                "Provider Install",
+                "Show the plan only unless exact confirmation was supplied.",
+                result,
+                json_mode=json_mode,
+                next_steps=(
+                    [f"rlw provider doctor {args.provider}"]
+                    if result.get("status") == "SUCCEEDED"
+                    else [f"rlw provider install {args.provider} --confirm {args.provider}"]
+                ),
+            )
+            return 1 if result.get("status") == "FAILED" else 0
         try:
             result = preview_provider_command(
                 root,
@@ -474,13 +562,19 @@ def main(argv: list[str] | None = None) -> int:
             _emit("Dataset Revision Detection", "Detect immutable local dataset snapshots.", result, json_mode=json_mode)
             return 0
         if command == "prepare":
+            recipe = args.recipe or _WORKFLOW_RECIPES[args.workflow]
+            if args.workflow == "starvla-qwenoft" and not args.dataset_revision:
+                raise ValueError(
+                    "StarVLA provider-native data requires --dataset-revision with an immutable revision"
+                )
             revision = _resolve_revision(service, args.dataset_revision)
             provider_env = None if args.python_executable else args.provider_env
             result = service.prepare(
-                args.recipe,
+                recipe,
                 dataset_revision=revision,
                 provider_env=provider_env,
                 python_executable=args.python_executable,
+                provider_root=args.provider_root,
             )
             _emit(
                 "Run Prepare",
@@ -489,9 +583,10 @@ def main(argv: list[str] | None = None) -> int:
                 json_mode=json_mode,
                 inputs={
                     "workflow": args.workflow,
-                    "recipe": args.recipe,
+                    "recipe": recipe,
                     "dataset_revision": revision,
-                    "provider_env": provider_env or args.python_executable,
+                    "provider_runtime": provider_env or args.python_executable or "configured/default",
+                    "provider_root": args.provider_root or "configured/default",
                 },
                 next_steps=[
                     f"rlw run show {result['run_id']}",

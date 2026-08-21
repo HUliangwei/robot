@@ -36,6 +36,10 @@ export function buildProviderDoctorPath(
   const suffix = query.toString()
   return `/providers/${encodeURIComponent(provider)}/doctor${suffix ? `?${suffix}` : ''}`
 }
+export function buildProviderActionPath(provider: string, action: 'configure' | 'install' | 'runtime'): string {
+  return `/providers/${encodeURIComponent(provider)}/${action}`
+}
+
 
 export function providerArchitectureRows(provider: ProviderDescriptor) {
   return (provider.capabilities.frameworks ?? []).map(item => ({
