@@ -107,6 +107,12 @@ def test_starvla_prepare_and_preflight_use_configured_runtime_without_core_chang
     assert checks["starVLA_import"]["ok"] is True
     assert checks["provider_checkout_valid"]["ok"] is True
     assert checks["provider_native_config_available"]["ok"] is True
+    assert checks["dataset_revision_available"] == {
+        "name": "dataset_revision_available",
+        "ok": True,
+        "required": False,
+        "detail": {"kind": "provider_native", "provider": "starvla", "native_config": "configs/train.yaml"},
+    }
 
 
 def test_starvla_execute_and_reconcile_register_checkpoint_idempotently(tmp_path: Path):

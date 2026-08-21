@@ -569,6 +569,7 @@ class GoldenPathService:
         dataset_lineage = (manifest.get("lineage") or {}).get("dataset") or {}
         dataset_manifest_rel = dataset_lineage.get("manifest")
         dataset_manifest_ok = False
+        dataset_source: dict[str, Any] = {}
         dataset_detail: dict[str, Any] = {"manifest": dataset_manifest_rel}
         if dataset_manifest_rel:
             dataset_path = self.root / str(dataset_manifest_rel)
@@ -578,20 +579,31 @@ class GoldenPathService:
                     data.get("revision") == dataset_lineage.get("revision")
                     and data.get("immutable") is True
                 )
+                dataset_source = data.get("source") or {}
                 dataset_detail.update({"revision": data.get("revision"), "immutable": data.get("immutable")})
         checks.append(_check("dataset_manifest_valid", dataset_manifest_ok, dataset_detail))
 
-        repo_id = (manifest.get("resolved_config") or {}).get("dataset_repo_id", "lerobot/pusht")
-        revision = dataset_lineage.get("revision")
-        snapshot = self.root / "datasets" / "hub" / ("datasets--" + str(repo_id).replace("/", "--")) / "snapshots" / str(revision)
-        checks.append(
-            _check(
+        if dataset_source.get("kind") == "provider_native":
+            checks.append(_check(
+                "dataset_revision_available",
+                dataset_manifest_ok,
+                {
+                    "kind": "provider_native",
+                    "provider": dataset_source.get("provider"),
+                    "native_config": dataset_source.get("native_config"),
+                },
+                required=False,
+            ))
+        else:
+            repo_id = (manifest.get("resolved_config") or {}).get("dataset_repo_id", "lerobot/pusht")
+            revision = dataset_lineage.get("revision")
+            snapshot = self.root / "datasets" / "hub" / ("datasets--" + str(repo_id).replace("/", "--")) / "snapshots" / str(revision)
+            checks.append(_check(
                 "dataset_revision_available",
                 snapshot.is_dir(),
                 snapshot.relative_to(self.root).as_posix() if snapshot.is_relative_to(self.root) else str(snapshot),
                 required=False,
-            )
-        )
+            ))
 
         argv = command.get("argv")
         checks.append(
