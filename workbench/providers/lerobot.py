@@ -50,6 +50,7 @@ class LeRobotAdapter:
     ) -> CommandSpec:
         if job_kind not in {"train", "evaluate"}:
             raise NotImplementedError(f"LeRobot adapter cannot build {job_kind!r} commands")
+
         if provider_env and python_executable:
             raise ValueError("choose provider_env or python_executable, not both")
 
@@ -77,13 +78,21 @@ class LeRobotAdapter:
             errors = self.validate({**config, "job_kind": job_kind})
             if errors:
                 raise ValueError("; ".join(errors))
+
             argv += [
                 "-m", "lerobot.scripts.lerobot_train",
                 f"--policy.type={config['policy_type']}",
-                f"--dataset.repo_id={config['dataset_repo_id']}",
             ]
+
+            if config.get("policy_repo_id"):
+                argv.append(f"--policy.repo_id={config['policy_repo_id']}")
+
+            argv.append(f"--dataset.repo_id={config['dataset_repo_id']}")
+
             if config.get("dataset_revision"):
                 argv.append(f"--dataset.revision={config['dataset_revision']}")
+
             for key, value in sorted((config.get("native_overrides") or {}).items()):
                 argv.append(f"--{key}={_stringify(value)}")
+
         return CommandSpec(tuple(argv), cwd=cwd)
