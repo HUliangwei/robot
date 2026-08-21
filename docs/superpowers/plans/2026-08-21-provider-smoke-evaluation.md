@@ -40,5 +40,5 @@ LeRobot PushT train/evaluate loop while keeping StarVLA Provider-native.
 
 - [x] Run focused tests, full Python tests, GUI tests, and GUI build.
 - [x] Update migration progress and README evidence.
-- [ ] Review diff, commit, and push the feature branch.
+- [x] Review diff, commit, and push the feature branch.
 
